@@ -1,9 +1,11 @@
 .PHONY: format check all
 
 format:
-	uv run ruff format --line-length 99
+	clear
+	uv run ruff format
 
 check:
-	uv run ruff check --line-length 99
+	clear
+	uv run ruff check
 
 all: format check

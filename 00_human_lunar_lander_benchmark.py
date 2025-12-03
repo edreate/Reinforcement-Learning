@@ -93,9 +93,7 @@ def run_human_lunar_lander(
             # 4) render frame to pygame
             frame = env.render()
             surf = pygame.surfarray.make_surface(frame.transpose((1, 0, 2)))
-            screen.blit(
-                pygame.transform.scale(surf, (screen_width, screen_height)), (0, 0)
-            )
+            screen.blit(pygame.transform.scale(surf, (screen_width, screen_height)), (0, 0))
 
             # 5) draw semi-transparent top bar
             bar_height = large_font.get_height() + small_font.get_height() + 20
@@ -115,9 +113,7 @@ def run_human_lunar_lander(
             )
             # Action
             screen.blit(
-                small_font.render(
-                    f"Action: {action_names[action]}", True, (255, 255, 255)
-                ),
+                small_font.render(f"Action: {action_names[action]}", True, (255, 255, 255)),
                 (150, 10),
             )
             # FPS
@@ -129,9 +125,7 @@ def run_human_lunar_lander(
             reward_surf = large_font.render(
                 f"Reward: {cumulative_reward:.1f}", True, (255, 215, 0)
             )
-            reward_rect = reward_surf.get_rect(
-                center=(screen_width // 2, bar_height // 2)
-            )
+            reward_rect = reward_surf.get_rect(center=(screen_width // 2, bar_height // 2))
             screen.blit(reward_surf, reward_rect)
 
             # 7) flip & tick

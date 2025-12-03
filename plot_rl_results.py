@@ -3,9 +3,7 @@ import matplotlib.pyplot as plt
 from typing import Sequence, Optional, Tuple
 
 
-def _moving_stats(
-    data: Sequence[float], window: int
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _moving_stats(data: Sequence[float], window: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute moving average / std over 1D data. Returns (indices, avg, std).
     """

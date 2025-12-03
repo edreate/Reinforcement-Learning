@@ -4,14 +4,20 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "gymnasium[box2d]>=1.2.0",
-    "jupyter>=1.1.1",
-    "matplotlib>=3.10.6",
-    "numpy>=2.3.3",
-    "onnx>=1.19.0",
-    "onnxruntime>=1.22.1",
-    "ruff>=0.13.0",
-    "swig>=4.3.1.post0",
-    "torch>=2.8.0",
-]
+
+# Keep base runtime dependencies minimal
+dependencies = ["numpy>=2.3.3", "jupyter>=1.1.1", "matplotlib>=3.10.6"]
+
+[project.optional-dependencies]
+
+# --- Development / linting / tooling ---
+dev = ["ruff>=0.13.0"]
+
+# --- Gymnasium & environment extras ---
+env = ["swig>=4.3.1.post0", "gymnasium[box2d]>=1.2.0"]
+
+# --- Training dependencies ---
+training = ["torch>=2.8.0", "onnx>=1.19.0"]
+
+# --- Inference dependencies ---
+inference = ["onnxruntime>=1.22.1"]

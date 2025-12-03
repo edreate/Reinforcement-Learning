@@ -1,0 +1,106 @@
+target-version = "py312"
+line-length = 89
+
+exclude = [
+    ".git",
+    ".venv",
+    ".idea",
+    ".pytest_cache",
+    "migrations",
+]
+
+# ============================================================
+# LINTING RULES (Grouped by Purpose)
+# ============================================================
+[lint]
+preview = true  # Enables experimental lint rules
+
+
+# ------------------------------------------------------------
+# 1. Core Style & Naming (PEP8 + General Style)
+# ------------------------------------------------------------
+select = [
+    "N",   # Naming conventions
+    "E",   # PEP8 errors
+    "W",   # PEP8 warnings
+    "A",   # Avoid shadowing Python builtins
+    "C4",  # Improve comprehensions
+    "EM",  # Clearer error messages
+    "ISC", # Prevent implicit string concatenation
+    "PIE", # Misc small-quality improvements
+    "SIM", # Suggest simpler code
+    "RET", # Remove unnecessary return statements
+    "ANN", # Require function type annotations
+    "ISC001", # flake8-implicit-str-concat.
+
+
+
+# ------------------------------------------------------------
+# 2. Modern Python & Code Upgrades
+# ------------------------------------------------------------
+    "UP",    # Auto-upgrade to modern Python syntax
+    "FURB",  # Modernization + cleanup (preview)
+    "PTH",   # Prefer pathlib over os.path
+    "PERF",  # Warn about performance anti-patterns
+
+
+# ------------------------------------------------------------
+# 3. Async, Numpy, Pandas, Domain-Specific Best Practices
+# ------------------------------------------------------------
+    "ASYNC", # Bad async/await usage
+    "PD",    # Pandas code linting
+    "NPY",   # Numpy best practices
+
+
+# ------------------------------------------------------------
+# 4. Bug / Error Detection (Static Analysis)
+# ------------------------------------------------------------
+    "F",     # Pyflakes: undefined names, unused imports, etc.
+    "B",     # Bugbear: find likely bugs
+    "FBT",   # Boolean trap in function signatures
+    "DTZ",   # Naive datetime usage
+    "SLF",   # Private/protected member access
+    "ARG",   # Unused arguments
+    "TRY",   # Bad exception-handling patterns
+    "RUF",   # Ruff internal bug checks
+
+
+# ------------------------------------------------------------
+# 5. Dead Code Removal
+# ------------------------------------------------------------
+    "ERA",   # Remove commented-out code
+
+
+# ------------------------------------------------------------
+# 6. Import Sorting
+# ------------------------------------------------------------
+    "I",     # isort: import sorting rules
+]
+
+
+# ------------------------------------------------------------
+# IGNORED RULES (Required for your stack)
+# ------------------------------------------------------------
+ignore = [
+    "N818",  # Custom exceptions don't need “Error” suffix
+    "F722",  # Forward annotations allowed for jaxtyping
+    "TRY003",# Long exception messages allowed
+    "EM101", # Allow f-strings in raised exceptions
+    "EM102", # Same for multiple f-string cases
+    "RUF009",# Allow callable defaults in dataclasses (pydantic)
+]
+
+flake8-annotations.mypy-init-return = true
+flake8-annotations.suppress-none-returning = true
+
+
+# ============================================================
+# FORMATTER CONFIG (Black-compatible)
+# ============================================================
+[format]
+docstring-code-format = false
+docstring-code-line-length = "dynamic"
+indent-style = "space"
+line-ending = "auto"
+quote-style = "double"
+skip-magic-trailing-comma = false

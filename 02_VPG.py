@@ -25,15 +25,21 @@ seed = 42
 torch.manual_seed(seed)
 np.random.seed(seed)
 import random
+
 random.seed(seed)
 
 # ------------------------------
 # Reuse from DQN: device picking
 # ------------------------------
 device = torch.device(
-    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
 )
 print("Using device:", device)
+
 
 # --------------------------------------
 # Reuse DQN pattern: training config dataclass
@@ -50,10 +56,11 @@ class VPGTrainingConfig:
     hidden_sizes: Tuple[int, int] = (256, 256)
     grad_clip_norm: Optional[float] = 10.0  # None to disable
     normalize_advantages: bool = True
-    entropy_coef: float = 0.0              # set >0 to add entropy bonus
+    entropy_coef: float = 0.0  # set >0 to add entropy bonus
     eval_episodes: int = 5
     log_every: int = 50
     results_dir: str = "trained_networks_lunar_lander"
+
 
 cfg = VPGTrainingConfig(seed=seed)
 
@@ -72,14 +79,16 @@ except TypeError:
 # Obs/Action dims
 state, info = env.reset()
 n_obs = len(state)
-assert hasattr(env.action_space, "shape") and len(env.action_space.shape) == 1, \
+assert hasattr(env.action_space, "shape") and len(env.action_space.shape) == 1, (
     "This script expects a 1D continuous action space."
+)
 n_actions = env.action_space.shape[0]
 
 print(f"\nEnvironment: LunarLanderContinuous-v3")
 print(f"State dimension: {n_obs}")
 print(f"Action dimension: {n_actions} (Box[-1, 1])")
 print("Initial state:", state)
+
 
 # ---------------------------------
 # Neural nets (VPG-specific parts)
@@ -99,8 +108,10 @@ class MLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
+
 class ValueNetwork(nn.Module):
     """State-value function V(s)."""
+
     def __init__(self, n_obs: int, hidden_sizes: Tuple[int, int] = (256, 256)):
         super().__init__()
         self.body = MLP(n_obs, hidden_sizes, 1)
@@ -109,13 +120,20 @@ class ValueNetwork(nn.Module):
         # Return shape: (B,) for convenience
         return self.body(x).squeeze(-1)
 
+
 class GaussianPolicy(nn.Module):
     """
     Tanh-squashed Gaussian policy π(a|s) for continuous actions in [-1, 1]^dim.
     Returns both mean and log_std; log_std is clipped for numerical stability.
     """
-    def __init__(self, n_obs: int, n_actions: int, hidden_sizes: Tuple[int, int] = (256, 256),
-                 log_std_bounds: Tuple[float, float] = (-5.0, 2.0)):
+
+    def __init__(
+        self,
+        n_obs: int,
+        n_actions: int,
+        hidden_sizes: Tuple[int, int] = (256, 256),
+        log_std_bounds: Tuple[float, float] = (-5.0, 2.0),
+    ):
         super().__init__()
         self.mu_net = MLP(n_obs, hidden_sizes, n_actions)
         self.log_std = nn.Parameter(torch.zeros(n_actions))
@@ -123,28 +141,38 @@ class GaussianPolicy(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         mu = self.mu_net(x)
-        log_std = torch.clamp(self.log_std, self.log_std_bounds[0], self.log_std_bounds[1])
+        log_std = torch.clamp(
+            self.log_std, self.log_std_bounds[0], self.log_std_bounds[1]
+        )
         return mu, log_std
 
     @staticmethod
     def _tanh_squash(z: torch.Tensor) -> torch.Tensor:
         return torch.tanh(z)
 
-    def sample_action_and_log_prob(self, s_np: np.ndarray, device: torch.device) -> Tuple[np.ndarray, torch.Tensor]:
+    def sample_action_and_log_prob(
+        self, s_np: np.ndarray, device: torch.device
+    ) -> Tuple[np.ndarray, torch.Tensor]:
         """
         Sample action a = tanh(z) with z ~ N(mu, std), and compute log π(a|s)
         including tanh correction.
         Returns (action_np, log_prob_torch).
         """
-        s = torch.as_tensor(s_np, dtype=torch.float32, device=device).unsqueeze(0)  # (1, n_obs)
-        mu, log_std = self.forward(s)                  # (1, n_actions), (n_actions,)
+        s = torch.as_tensor(s_np, dtype=torch.float32, device=device).unsqueeze(
+            0
+        )  # (1, n_obs)
+        mu, log_std = self.forward(s)  # (1, n_actions), (n_actions,)
         std = log_std.exp()
         dist = Normal(mu, std)
-        z = dist.rsample()                             # reparameterized sample (1, n_actions)
-        a = self._tanh_squash(z)                      # (1, n_actions)
+        z = dist.rsample()  # reparameterized sample (1, n_actions)
+        a = self._tanh_squash(z)  # (1, n_actions)
         # Log prob with tanh correction
-        log_prob = dist.log_prob(z).sum(dim=-1) - torch.log(1 - a.pow(2) + 1e-6).sum(dim=-1)  # (1,)
-        return a.squeeze(0).detach().cpu().numpy(), log_prob.squeeze(0)  # np (n_actions,), torch scalar
+        log_prob = dist.log_prob(z).sum(dim=-1) - torch.log(1 - a.pow(2) + 1e-6).sum(
+            dim=-1
+        )  # (1,)
+        return a.squeeze(0).detach().cpu().numpy(), log_prob.squeeze(
+            0
+        )  # np (n_actions,), torch scalar
 
     def deterministic_action(self, s_np: np.ndarray, device: torch.device) -> np.ndarray:
         """Mean action (tanh(mu)) for evaluation."""
@@ -152,6 +180,7 @@ class GaussianPolicy(nn.Module):
         mu, _ = self.forward(s)
         a = torch.tanh(mu)
         return a.squeeze(0).detach().cpu().numpy()
+
 
 # ------------------------------------------
 # VPG utilities: trajectories & advantages
@@ -163,7 +192,14 @@ def collect_trajectory(
     value_net: ValueNetwork,
     device: torch.device,
     max_steps: int,
-) -> Tuple[List[np.ndarray], List[np.ndarray], List[torch.Tensor], List[float], List[bool], List[float]]:
+) -> Tuple[
+    List[np.ndarray],
+    List[np.ndarray],
+    List[torch.Tensor],
+    List[float],
+    List[bool],
+    List[float],
+]:
     """
     Roll out one episode with the current policy.
     Returns: states, actions, log_probs, rewards, dones, values
@@ -184,7 +220,9 @@ def collect_trajectory(
         torch.set_grad_enabled(False)
 
         # Baseline value (no grad here, we store float)
-        v = value_net(torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)).item()
+        v = value_net(
+            torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+        ).item()
 
         next_obs, reward, terminated, truncated, _ = env.step(action_np)
         done = bool(terminated or truncated)
@@ -201,6 +239,7 @@ def collect_trajectory(
             break
 
     return states, actions, log_probs, rewards, dones, values
+
 
 def compute_returns_and_advantages(
     rewards: List[float], values: List[float], dones: List[bool], gamma: float
@@ -223,6 +262,7 @@ def compute_returns_and_advantages(
     returns_np = np.asarray(returns, dtype=np.float32)
     advantages_np = returns_np - values
     return returns_np, advantages_np
+
 
 # ------------------------------------------
 # Reuse from DQN: evaluation helper pattern
@@ -258,12 +298,14 @@ def evaluate_policy_vpg(
     print(f"[Eval] mean return over {n_episodes} episodes: {mean_r:.2f}")
     return mean_r
 
+
 # ------------------------------------------
 # Optional plotting/saving (DQN-style hooks)
 # ------------------------------------------
 _have_plot_helper = False
 try:
     from plot_rl_results import plot_training_statistics
+
     _have_plot_helper = True
 except Exception:
     pass
@@ -271,12 +313,19 @@ except Exception:
 _have_saver = False
 try:
     from model_saver import save_model_pytorch, save_lunar_model_onnx
+
     _have_saver = True
 except Exception:
     pass
 
-def _local_plot_losses(policy_losses: List[float], value_losses: List[float], save_path: Optional[str] = None):
+
+def _local_plot_losses(
+    policy_losses: List[float],
+    value_losses: List[float],
+    save_path: Optional[str] = None,
+):
     import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots(2, 1, figsize=(8, 6), dpi=110)
     ax[0].plot(policy_losses)
     ax[0].set_title("Policy Loss")
@@ -294,6 +343,7 @@ def _local_plot_losses(policy_losses: List[float], value_losses: List[float], sa
         print(f"Saved losses plot to {save_path}_losses.png")
     plt.close(fig)
 
+
 # ------------------------------------------
 # Training loop (reusing DQN's cadence)
 # ------------------------------------------
@@ -303,7 +353,9 @@ def train_vpg_continuous(
     device: torch.device,
     n_obs: int,
     n_actions: int,
-) -> Tuple[GaussianPolicy, ValueNetwork, List[float], List[int], List[float], List[float]]:
+) -> Tuple[
+    GaussianPolicy, ValueNetwork, List[float], List[int], List[float], List[float]
+]:
     policy = GaussianPolicy(n_obs, n_actions, hidden_sizes=cfg.hidden_sizes).to(device)
     value_net = ValueNetwork(n_obs, hidden_sizes=cfg.hidden_sizes).to(device)
 
@@ -326,7 +378,9 @@ def train_vpg_continuous(
         )
 
         # Returns & advantages
-        returns_np, adv_np = compute_returns_and_advantages(rewards, values, dones, gamma=cfg.gamma)
+        returns_np, adv_np = compute_returns_and_advantages(
+            rewards, values, dones, gamma=cfg.gamma
+        )
 
         # Convert to tensors
         log_probs_t = torch.stack(log_probs)  # (T,)
@@ -334,7 +388,9 @@ def train_vpg_continuous(
         advantages_t = torch.as_tensor(adv_np, dtype=torch.float32, device=device)
 
         if cfg.normalize_advantages and advantages_t.numel() > 1:
-            advantages_t = (advantages_t - advantages_t.mean()) / (advantages_t.std(unbiased=False) + 1e-8)
+            advantages_t = (advantages_t - advantages_t.mean()) / (
+                advantages_t.std(unbiased=False) + 1e-8
+            )
 
         # === Policy update ===
         policy_opt.zero_grad(set_to_none=True)
@@ -351,8 +407,10 @@ def train_vpg_continuous(
         # === Value update ===
         value_opt.zero_grad(set_to_none=True)
         states_t = torch.as_tensor(np.asarray(states, dtype=np.float32), device=device)
-        value_preds = value_net(states_t)                    # (T,)
-        value_loss = value_criterion(value_preds, returns_t) # MSE to Monte Carlo returns
+        value_preds = value_net(states_t)  # (T,)
+        value_loss = value_criterion(
+            value_preds, returns_t
+        )  # MSE to Monte Carlo returns
         value_loss.backward()
         if cfg.grad_clip_norm is not None:
             nn.utils.clip_grad_norm_(value_net.parameters(), max_norm=cfg.grad_clip_norm)
@@ -366,14 +424,26 @@ def train_vpg_continuous(
         value_losses.append(float(value_loss.item()))
 
         if (ep + 1) % cfg.log_every == 0 or ep == 0:
-            avg_r = float(np.mean(episode_rewards[-25:])) if len(episode_rewards) >= 1 else ep_return
+            avg_r = (
+                float(np.mean(episode_rewards[-25:]))
+                if len(episode_rewards) >= 1
+                else ep_return
+            )
             print(
                 f"[Episode {ep + 1:4d}] len={episode_lengths[-1]:4d}  "
                 f"return={ep_return:8.2f}  avg25={avg_r:8.2f}  "
                 f"π_loss={policy_losses[-1]:.3f}  V_loss={value_losses[-1]:.3f}"
             )
 
-    return policy, value_net, episode_rewards, episode_lengths, policy_losses, value_losses
+    return (
+        policy,
+        value_net,
+        episode_rewards,
+        episode_lengths,
+        policy_losses,
+        value_losses,
+    )
+
 
 # -----------------
 # Train + Evaluate
@@ -411,17 +481,24 @@ if _have_plot_helper:
 else:
     # Local minimal plots if helper isn't available
     import matplotlib.pyplot as plt
+
     fig1, ax1 = plt.subplots(figsize=(8, 4), dpi=110)
     ax1.plot(ep_rewards)
     ax1.set_title(title + " — Rewards")
-    ax1.set_xlabel("Episode"); ax1.set_ylabel("Return")
-    fig1.tight_layout(); fig1.savefig(save_prefix + "_rewards.png", dpi=300); plt.close(fig1)
+    ax1.set_xlabel("Episode")
+    ax1.set_ylabel("Return")
+    fig1.tight_layout()
+    fig1.savefig(save_prefix + "_rewards.png", dpi=300)
+    plt.close(fig1)
 
     fig2, ax2 = plt.subplots(figsize=(8, 4), dpi=110)
     ax2.plot(ep_lengths)
     ax2.set_title(title + " — Episode Lengths")
-    ax2.set_xlabel("Episode"); ax2.set_ylabel("Length")
-    fig2.tight_layout(); fig2.savefig(save_prefix + "_lengths.png", dpi=300); plt.close(fig2)
+    ax2.set_xlabel("Episode")
+    ax2.set_ylabel("Length")
+    fig2.tight_layout()
+    fig2.savefig(save_prefix + "_lengths.png", dpi=300)
+    plt.close(fig2)
 
 # Also store losses locally for convenience
 _local_plot_losses(pi_losses, v_losses, save_path=save_prefix)

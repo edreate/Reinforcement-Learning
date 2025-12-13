@@ -9,8 +9,21 @@ This repository contains the **codebase** used in lessons from Edreate’s Deep 
   </a>
 </p>
 
-👉 For the **full learning experience**—including in-depth write-ups, mathematical formulas, video explanations, and structured chapters—visit the course page:  
+👉 For the **full learning experience**—including in-depth write-ups, mathematical formulas, video explanations, and structured chapters—visit the course page:
 🔗 [edreate.com/courses/deep-reinforcement-learning](https://edreate.com/courses/deep-reinforcement-learning/)
+
+---
+
+## 🧭 How to explore this repo (start here!)
+
+Begin with the **notebooks** and then check the supporting Python packages:
+
+- [Deep Q-Learning notebook](src/deep-q-learning/01_deep_q_learning.ipynb) – walk-through of DQN with code and explanations.
+- [Q-Learning notebooks](src/q-learning) – tabular Q-learning demos, including a 2x3 grid world.
+- `src/` – reusable Python packages for environments, agents, and utilities used across the lessons.
+- `training_output_lunar_lander/` – saved models and example training plots for the Lunar Lander Deep Q-Network run.
+
+Keep the course site open alongside the notebooks for theory, derivations, and videos.
 
 ---
 
@@ -59,8 +72,9 @@ uv run jupyter notebook
 </p>
 
 ### ✅ Available Now
-- [**Deep Q-Learning**](https://github.com/edreate/Deep_Reinforcement_Learning/blob/main/01_deep_q_learning.ipynb)
-  Learn how DQN scales beyond Q-tables and train agents directly with neural networks.
+- [**Deep Q-Learning**](src/deep-q-learning/01_deep_q_learning.ipynb) – train value-based agents with neural networks and experience replay.
+- [**Tabular Q-Learning**](src/q-learning/q_learning.ipynb) – foundational algorithm for discrete environments.
+- [**Grid World Q-Learning**](src/q-learning/q_learning_2x3_world.ipynb) – small-world example to visualize value updates.
 
 ### 🔜 Coming Soon
 - **Vanilla Policy Gradient (VPG)** – direct optimization of stochastic policies  

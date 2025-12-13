@@ -11,7 +11,9 @@ import onnxruntime as ort
 # ------------------------------
 
 
-def load_onnx_session(filename: Path, providers: Optional[list[str]] = None) -> ort.InferenceSession:
+def load_onnx_session(
+    filename: Path, providers: Optional[list[str]] = None
+) -> ort.InferenceSession:
     """
     Load an ONNX model for inference.
     """
@@ -90,7 +92,12 @@ def _format_obs(obs: np.ndarray, continuous: bool) -> list[str]:
 
 
 def _draw_hud(
-    surface: pygame.Surface, panel_rect: pygame.Rect, lines: list[str], *, title: str, extras: list[str]
+    surface: pygame.Surface,
+    panel_rect: pygame.Rect,
+    lines: list[str],
+    *,
+    title: str,
+    extras: list[str],
 ) -> None:
     # Panel background
     overlay = pygame.Surface((panel_rect.width, panel_rect.height), pygame.SRCALPHA)
@@ -101,25 +108,39 @@ def _draw_hud(
     font_title = pygame.font.SysFont(None, 26, bold=True)
     font_text = pygame.font.SysFont(None, 22)
     y = panel_rect.top + 10
-    surface.blit(font_title.render(title, True, (230, 230, 230)), (panel_rect.left + 12, y))
+    surface.blit(
+        font_title.render(title, True, (230, 230, 230)), (panel_rect.left + 12, y)
+    )
     y += 16
 
     # Stats lines
     for s in lines:
         y += 20
-        surface.blit(font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y))
+        surface.blit(
+            font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y)
+        )
 
     # Divider
     y += 16
-    pygame.draw.line(surface, (200, 200, 200), (panel_rect.left + 10, y), (panel_rect.right - 10, y), 1)
+    pygame.draw.line(
+        surface,
+        (200, 200, 200),
+        (panel_rect.left + 10, y),
+        (panel_rect.right - 10, y),
+        1,
+    )
 
     # Extra lines
     for s in extras:
         y += 20
-        surface.blit(font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y))
+        surface.blit(
+            font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y)
+        )
 
 
-def _draw_final_banner(screen: pygame.Surface, text_lines: list[str], *, success: bool) -> None:
+def _draw_final_banner(
+    screen: pygame.Surface, text_lines: list[str], *, success: bool
+) -> None:
     W, H = screen.get_size()
     overlay = pygame.Surface((W, H), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 180))  # darken the whole window
@@ -177,7 +198,9 @@ def run_and_control_lunar_lander(
     pygame.init()
     pygame.font.init()
     screen = pygame.display.set_mode((fw + HUD_W, fh))
-    pygame.display.set_caption(f"Lunar Lander (ONNX) – {'Continuous' if continuous else 'Discrete'}")
+    pygame.display.set_caption(
+        f"Lunar Lander (ONNX) - {'Continuous' if continuous else 'Discrete'}"
+    )
     clock = pygame.time.Clock()
 
     def show(frame_np: np.ndarray):
@@ -223,7 +246,13 @@ def run_and_control_lunar_lander(
             f"Real FPS       : {clock.get_fps():6.2f}",
         ]
 
-        _draw_hud(screen, panel_rect, obs_lines, title="Lunar Lander – Live Stats", extras=extras)
+        _draw_hud(
+            screen,
+            panel_rect,
+            obs_lines,
+            title="Lunar Lander - Live Stats",
+            extras=extras,
+        )
         pygame.display.flip()
 
     # Initial draw
@@ -231,7 +260,9 @@ def run_and_control_lunar_lander(
 
     while not done:
         # Compute action from ONNX
-        action = onnx_policy_action(session, state, continuous=continuous, apply_tanh=apply_tanh)
+        action = onnx_policy_action(
+            session, state, continuous=continuous, apply_tanh=apply_tanh
+        )
         observation, reward, terminated, truncated, _ = env.step(action)
 
         # Update trackers
@@ -284,7 +315,7 @@ def run_and_control_lunar_lander(
 if __name__ == "__main__":
     # Point this to your ONNX file
     MODEL_FILE_PATH = Path(
-        "/Users/ibad/Desktop/ft_productivity_helpers/RL_Learn/trained_networks_lunar_lander/deep_q_network_lunar_lander_2025-09-13_13-38.onnx"
+        "training_output_lunar_lander/discrete/deep_q_network_lunar_lander/trained_dqn_2025-12-13_23-18.onnx"
     )
 
     # Discrete agent -> False, Continuous agent -> True
@@ -297,4 +328,6 @@ if __name__ == "__main__":
     print(f"Action space type: {'Continuous' if CONTINUOUS else 'Discrete'}")
 
     session = load_onnx_session(MODEL_FILE_PATH)
-    run_and_control_lunar_lander(session, continuous=CONTINUOUS, apply_tanh=APPLY_TANH, render_fps=20)
+    run_and_control_lunar_lander(
+        session, continuous=CONTINUOUS, apply_tanh=APPLY_TANH, render_fps=20
+    )

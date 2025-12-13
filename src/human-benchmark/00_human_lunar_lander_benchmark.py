@@ -79,7 +79,9 @@ def run_human_lunar_lander(
 
             # 2) handle quit
             for evt in pygame.event.get():
-                if evt.type == pygame.QUIT or (evt.type == pygame.KEYDOWN and evt.key == pygame.K_ESCAPE):
+                if evt.type == pygame.QUIT or (
+                    evt.type == pygame.KEYDOWN and evt.key == pygame.K_ESCAPE
+                ):
                     done = True
 
             # 3) step environment
@@ -91,7 +93,9 @@ def run_human_lunar_lander(
             # 4) render frame to pygame
             frame = env.render()
             surf = pygame.surfarray.make_surface(frame.transpose((1, 0, 2)))
-            screen.blit(pygame.transform.scale(surf, (screen_width, screen_height)), (0, 0))
+            screen.blit(
+                pygame.transform.scale(surf, (screen_width, screen_height)), (0, 0)
+            )
 
             # 5) draw semi-transparent top bar
             bar_height = large_font.get_height() + small_font.get_height() + 20
@@ -111,7 +115,9 @@ def run_human_lunar_lander(
             )
             # Action
             screen.blit(
-                small_font.render(f"Action: {action_names[action]}", True, (255, 255, 255)),
+                small_font.render(
+                    f"Action: {action_names[action]}", True, (255, 255, 255)
+                ),
                 (150, 10),
             )
             # FPS
@@ -120,8 +126,12 @@ def run_human_lunar_lander(
             screen.blit(txt_surf, (screen_width - txt_surf.get_width() - 10, 10))
 
             # Big centered cumulative reward
-            reward_surf = large_font.render(f"Reward: {cumulative_reward:.1f}", True, (255, 215, 0))
-            reward_rect = reward_surf.get_rect(center=(screen_width // 2, bar_height // 2))
+            reward_surf = large_font.render(
+                f"Reward: {cumulative_reward:.1f}", True, (255, 215, 0)
+            )
+            reward_rect = reward_surf.get_rect(
+                center=(screen_width // 2, bar_height // 2)
+            )
             screen.blit(reward_surf, reward_rect)
 
             # 7) flip & tick
@@ -140,9 +150,9 @@ def run_human_lunar_lander(
         print("\n--- Human Benchmark Results ---")
         print(f"Episodes played    : {episodes}")
         print(f"Max Reward         : {max(all_rewards):.2f}")
-        print(f"Average Reward     : {sum(all_rewards)/len(all_rewards):.2f}")
+        print(f"Average Reward     : {sum(all_rewards) / len(all_rewards):.2f}")
         print(f"Worst Reward       : {min(all_rewards):.2f}")
-        print(f"Average Steps/Ep   : {sum(all_steps)/len(all_steps):.1f}")
+        print(f"Average Steps/Ep   : {sum(all_steps) / len(all_steps):.1f}")
 
 
 if __name__ == "__main__":

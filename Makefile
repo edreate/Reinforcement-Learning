@@ -1,9 +1,10 @@
-.PHONY: format check all
+setup:
+	curl -LsSf https://astral.sh/uv/install.sh | sh
+	uv pip install swig
+	uv sync
 
 format:
-	uv run ruff format --line-length 99
+	uv run ruff
 
 check:
-	uv run ruff check --line-length 99
-
-all: format check
+	uv run ruff check

@@ -108,13 +108,17 @@ def _draw_hud(
     font_title = pygame.font.SysFont(None, 26, bold=True)
     font_text = pygame.font.SysFont(None, 22)
     y = panel_rect.top + 10
-    surface.blit(font_title.render(title, True, (230, 230, 230)), (panel_rect.left + 12, y))
+    surface.blit(
+        font_title.render(title, True, (230, 230, 230)), (panel_rect.left + 12, y)
+    )
     y += 16
 
     # Stats lines
     for s in lines:
         y += 20
-        surface.blit(font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y))
+        surface.blit(
+            font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y)
+        )
 
     # Divider
     y += 16
@@ -129,10 +133,14 @@ def _draw_hud(
     # Extra lines
     for s in extras:
         y += 20
-        surface.blit(font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y))
+        surface.blit(
+            font_text.render(s, True, (220, 220, 220)), (panel_rect.left + 12, y)
+        )
 
 
-def _draw_final_banner(screen: pygame.Surface, text_lines: list[str], *, success: bool) -> None:
+def _draw_final_banner(
+    screen: pygame.Surface, text_lines: list[str], *, success: bool
+) -> None:
     W, H = screen.get_size()
     overlay = pygame.Surface((W, H), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 180))  # darken the whole window
@@ -252,7 +260,9 @@ def run_and_control_lunar_lander(
 
     while not done:
         # Compute action from ONNX
-        action = onnx_policy_action(session, state, continuous=continuous, apply_tanh=apply_tanh)
+        action = onnx_policy_action(
+            session, state, continuous=continuous, apply_tanh=apply_tanh
+        )
         observation, reward, terminated, truncated, _ = env.step(action)
 
         # Update trackers

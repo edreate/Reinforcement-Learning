@@ -26,7 +26,9 @@ def load_model(
         nn.Module: Loaded model instance.
     """
     try:
-        model = model_class(state_dim=n_observations, action_dim=n_actions, hidden_dim=256)
+        model = model_class(
+            state_dim=n_observations, action_dim=n_actions, hidden_dim=256
+        )
         model.load_state_dict(torch.load(filename, weights_only=True))
         model.eval()
         return model

@@ -32,7 +32,11 @@ random.seed(seed)
 # Reuse from DQN: device picking
 # ------------------------------
 device = torch.device(
-    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
 )
 print("Using device:", device)
 
@@ -137,7 +141,9 @@ class GaussianPolicy(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         mu = self.mu_net(x)
-        log_std = torch.clamp(self.log_std, self.log_std_bounds[0], self.log_std_bounds[1])
+        log_std = torch.clamp(
+            self.log_std, self.log_std_bounds[0], self.log_std_bounds[1]
+        )
         return mu, log_std
 
     @staticmethod
@@ -152,7 +158,9 @@ class GaussianPolicy(nn.Module):
         including tanh correction.
         Returns (action_np, log_prob_torch).
         """
-        s = torch.as_tensor(s_np, dtype=torch.float32, device=device).unsqueeze(0)  # (1, n_obs)
+        s = torch.as_tensor(s_np, dtype=torch.float32, device=device).unsqueeze(
+            0
+        )  # (1, n_obs)
         mu, log_std = self.forward(s)  # (1, n_actions), (n_actions,)
         std = log_std.exp()
         dist = Normal(mu, std)
@@ -212,7 +220,9 @@ def collect_trajectory(
         torch.set_grad_enabled(False)
 
         # Baseline value (no grad here, we store float)
-        v = value_net(torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)).item()
+        v = value_net(
+            torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+        ).item()
 
         next_obs, reward, terminated, truncated, _ = env.step(action_np)
         done = bool(terminated or truncated)
@@ -343,7 +353,9 @@ def train_vpg_continuous(
     device: torch.device,
     n_obs: int,
     n_actions: int,
-) -> Tuple[GaussianPolicy, ValueNetwork, List[float], List[int], List[float], List[float]]:
+) -> Tuple[
+    GaussianPolicy, ValueNetwork, List[float], List[int], List[float], List[float]
+]:
     policy = GaussianPolicy(n_obs, n_actions, hidden_sizes=cfg.hidden_sizes).to(device)
     value_net = ValueNetwork(n_obs, hidden_sizes=cfg.hidden_sizes).to(device)
 
@@ -396,7 +408,9 @@ def train_vpg_continuous(
         value_opt.zero_grad(set_to_none=True)
         states_t = torch.as_tensor(np.asarray(states, dtype=np.float32), device=device)
         value_preds = value_net(states_t)  # (T,)
-        value_loss = value_criterion(value_preds, returns_t)  # MSE to Monte Carlo returns
+        value_loss = value_criterion(
+            value_preds, returns_t
+        )  # MSE to Monte Carlo returns
         value_loss.backward()
         if cfg.grad_clip_norm is not None:
             nn.utils.clip_grad_norm_(value_net.parameters(), max_norm=cfg.grad_clip_norm)
@@ -411,7 +425,9 @@ def train_vpg_continuous(
 
         if (ep + 1) % cfg.log_every == 0 or ep == 0:
             avg_r = (
-                float(np.mean(episode_rewards[-25:])) if len(episode_rewards) >= 1 else ep_return
+                float(np.mean(episode_rewards[-25:]))
+                if len(episode_rewards) >= 1
+                else ep_return
             )
             print(
                 f"[Episode {ep + 1:4d}] len={episode_lengths[-1]:4d}  "

@@ -8,7 +8,7 @@ Dependencies:
   - pygame         (pip install pygame)
 
 Usage:
-  python human_lunar_lander.py
+  python 00_human_lunar_lander_benchmark.py
   Enter number of episodes when prompted.
 
 Controls (hold for continuous thrust):

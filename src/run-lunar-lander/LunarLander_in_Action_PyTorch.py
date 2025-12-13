@@ -26,7 +26,9 @@ def load_model(
         nn.Module: Loaded model instance.
     """
     try:
-        model = model_class(state_dim=n_observations, action_dim=n_actions, hidden_dim=256)
+        model = model_class(
+            state_dim=n_observations, action_dim=n_actions, hidden_dim=256
+        )
         model.load_state_dict(torch.load(filename, weights_only=True))
         model.eval()
         return model
@@ -87,7 +89,9 @@ def run_and_control_lunar_lander(
 
 
 if __name__ == "__main__":
-    MODEL_FILE_PATH = Path("output/sac_continuous_lunar_lander_training_2024-12-23_12-52-16/policy_network.pth")
+    MODEL_FILE_PATH = Path(
+        "output/sac_continuous_lunar_lander_training_2024-12-23_12-52-16/policy_network.pth"
+    )
     MODEL_CLASS = ActorNetwork
     CONTINUOUS = True
 

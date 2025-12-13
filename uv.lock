@@ -367,35 +367,6 @@ wheels = [
 ]
 
 [[package]]
-name = "deep-reinforcement-learning"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "gymnasium", extra = ["box2d"] },
-    { name = "jupyter" },
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "onnx" },
-    { name = "onnxruntime" },
-    { name = "ruff" },
-    { name = "swig" },
-    { name = "torch" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "gymnasium", extras = ["box2d"], specifier = ">=1.2.0" },
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "matplotlib", specifier = ">=3.10.6" },
-    { name = "numpy", specifier = ">=2.3.3" },
-    { name = "onnx", specifier = ">=1.19.0" },
-    { name = "onnxruntime", specifier = ">=1.22.1" },
-    { name = "ruff", specifier = ">=0.13.0" },
-    { name = "swig", specifier = ">=4.3.1.post0" },
-    { name = "torch", specifier = ">=2.8.0" },
-]
-
-[[package]]
 name = "defusedxml"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1808,6 +1779,37 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2f/db/98b5c277be99dd18bfd91dd04e1b759cad18d1a338188c936e92f921c7e2/referencing-0.36.2.tar.gz", hash = "sha256:df2e89862cd09deabbdba16944cc3f10feb6b3e6f18e902f7cc25609a34775aa", size = 74744, upload-time = "2025-01-25T08:48:16.138Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/b1/3baf80dc6d2b7bc27a95a67752d0208e410351e3feb4eb78de5f77454d8d/referencing-0.36.2-py3-none-any.whl", hash = "sha256:e8699adbbf8b5c7de96d8ffa0eb5c158b3beafce084968e2ea8bb08c6794dcd0", size = 26775, upload-time = "2025-01-25T08:48:14.241Z" },
+]
+
+[[package]]
+name = "reinforcement-learning"
+version = "0.2.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "gymnasium", extra = ["box2d"] },
+    { name = "jupyter" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "onnx" },
+    { name = "onnxruntime" },
+    { name = "pygame" },
+    { name = "ruff" },
+    { name = "swig" },
+    { name = "torch" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gymnasium", extras = ["box2d"], specifier = ">=1.2.0" },
+    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "matplotlib", specifier = ">=3.10.6" },
+    { name = "numpy", specifier = ">=2.3.3" },
+    { name = "onnx", specifier = ">=1.19.0" },
+    { name = "onnxruntime", specifier = ">=1.22.1" },
+    { name = "pygame", specifier = ">=2.6.1" },
+    { name = "ruff", specifier = ">=0.13.0" },
+    { name = "swig", specifier = ">=4.3.1.post0" },
+    { name = "torch", specifier = ">=2.8.0" },
 ]
 
 [[package]]

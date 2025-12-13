@@ -1,9 +1,14 @@
 [project]
-name = "deep-reinforcement-learning"
-version = "0.1.0"
-description = "Add your description here"
+name = "reinforcement-learning"
+
+version = "0.2.0"
+
+description = "Code for Edreate's Deep Reinforcement Learning Course: https://edreate.com/courses/deep-reinforcement-learning/"
+
 readme = "README.md"
+
 requires-python = ">=3.13"
+
 dependencies = [
     "gymnasium[box2d]>=1.2.0",
     "jupyter>=1.1.1",
@@ -11,6 +16,7 @@ dependencies = [
     "numpy>=2.3.3",
     "onnx>=1.19.0",
     "onnxruntime>=1.22.1",
+    "pygame>=2.6.1",
     "ruff>=0.13.0",
     "swig>=4.3.1.post0",
     "torch>=2.8.0",

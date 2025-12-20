@@ -4,7 +4,7 @@ setup:
 	uv sync
 
 format:
-	uv run ruff
+	uv run ruff format
 
 check:
 	uv run ruff check

@@ -59,7 +59,7 @@ uv run jupyter notebook
 </p>
 
 ### ✅ Available Now
-- **Tabular Q-Learning** – start with the introductory notebook and walk through a simple 2×3 grid world, then try the stochastic/complex variant to stress-test your policy updates (`src/q-learning/q_learning.ipynb`, `q_learning_2x3_simple_world.ipynb`, `q_learning_2x3_world.ipynb`).
+- [**Tabular Q-Learning**](https://github.com/edreate/Reinforcement-Learning/tree/main/src/q-learning) – start with the introductory notebook and walk through a simple 2×3 grid world, then try the stochastic/complex variant to stress-test your policy updates (`src/q-learning/q_learning.ipynb`, `q_learning_2x3_simple_world.ipynb`).
 - [**Deep Q-Learning**](https://github.com/edreate/Deep_Reinforcement_Learning/blob/main/01_deep_q_learning.ipynb)
   Learn how DQN scales beyond Q-tables and train agents directly with neural networks.
 

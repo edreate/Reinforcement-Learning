@@ -10,7 +10,7 @@ def save_lunar_model_onnx(
     path: Union[str, Path],
     *,
     continuous: bool = False,
-    opset: int = 17,
+    opset: int = 18,
     include_timestamp: bool = True,
 ) -> Path:
     """
@@ -18,7 +18,7 @@ def save_lunar_model_onnx(
 
     - Automatically generates example input of shape [1, 8].
     - Adds timestamp (YYYY-MM-DD_HH-MM) before extension to avoid overwrite.
-    - Handles both discrete (n_actions=4) and continuous (n_actions=2).
+    - Uses the new PyTorch dynamo ONNX exporter.
 
     Parameters
     ----------
@@ -29,7 +29,7 @@ def save_lunar_model_onnx(
     continuous : bool, optional
         True if the model is continuous (2D action), False for discrete (4D Q-values).
     opset : int, optional
-        ONNX opset version (default 17).
+        ONNX opset version (default 18).
     include_timestamp : bool, optional
         Whether to append timestamp to filename. Default True.
 
@@ -38,8 +38,7 @@ def save_lunar_model_onnx(
     Path
         Final ONNX file path.
     """
-    model.to("cpu")
-    model.eval()
+    model = model.to("cpu").eval()
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,28 +53,26 @@ def save_lunar_model_onnx(
     else:
         save_path = base
 
-    # Example input: Lunar Lander obs dim = 8
+    # Lunar Lander observation dimension = 8
     dummy_input = torch.zeros(1, 8, dtype=torch.float32)
 
     input_names = ["state"]
-    output_names = ["action" if continuous else "q_values"]
+    output_name = "action" if continuous else "q_values"
 
-    dynamic_axes = {
-        "state": {0: "batch"},
-        output_names[0]: {0: "batch"},
-    }
+    # ✅ Proper dynamic_shapes format for new exporter
+    dynamic_shapes = ({0: torch.export.Dim("batch")},)
 
     with torch.no_grad():
         torch.onnx.export(
             model,
-            dummy_input,
+            (dummy_input,),  # tuple required by dynamo exporter
             save_path.as_posix(),
             export_params=True,
             opset_version=opset,
-            do_constant_folding=True,
             input_names=input_names,
-            output_names=output_names,
-            dynamic_axes=dynamic_axes,
+            output_names=[output_name],
+            dynamic_shapes=dynamic_shapes,
+            dynamo=True,
         )
 
     print(f"✅ Lunar Lander model exported to {save_path.resolve()}")

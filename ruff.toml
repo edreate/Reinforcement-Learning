@@ -87,6 +87,7 @@ ignore = [
     "EM101", # Allow f-strings in raised exceptions
     "EM102", # Same for multiple f-string cases
     "RUF009",# Allow callable defaults in dataclasses (pydantic)
+    "RET504",
 ]
 
 flake8-annotations.mypy-init-return = true

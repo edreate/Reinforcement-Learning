@@ -315,7 +315,7 @@ def run_and_control_lunar_lander(
 if __name__ == "__main__":
     # Point this to your ONNX file
     MODEL_FILE_PATH = Path(
-        "training_output_lunar_lander/discrete/deep_q_network_lunar_lander/trained_dqn_2025-12-13_23-18.onnx"
+        "training_output_lunar_lander/discrete/deep_q_network_lunar_lander/trained_dqn_2026-02-22_16-10.onnx"
     )
 
     # Discrete agent -> False, Continuous agent -> True

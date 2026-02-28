@@ -8,35 +8,27 @@ Install the required dependencies using one of the following methods.
 
 ### Option 1 – Using pip
 
-```
-Bash
-
-pip install swig "gymnasium\[box2d\]" jupyter numpy torch matplotlib onnx onnxscript onnxruntime
+```Bash
+pip install swig "gymnasium[box2d]" jupyter numpy torch matplotlib onnx onnxscript onnxruntime
 ```
 
 ### Option 2 – Using uv (pip interface)
 
-```
-Bash
-
-uv pip install swig "gymnasium\[box2d\]" jupyter numpy torch matplotlib onnx onnxscript onnxruntime
+```Bash
+uv pip install swig "gymnasium[box2d]" jupyter numpy torch matplotlib onnx onnxscript onnxruntime
 ```
 
 ### Option 3 – Using uv (project dependency management)
 
-```
-Bash
-
-uv add swig "gymnasium\[box2d\]" jupyter numpy torch matplotlib onnx onnxscript onnxruntime
+```Bash
+uv add swig "gymnasium[box2d]" jupyter numpy torch matplotlib onnx onnxscript onnxruntime
 ```
 
 ## 🚀 Usage
 
 Launch Jupyter Notebook:
 
-```
-Bash
-
+```Bash
 jupyter notebook
 ```
 Run the training and start training your agent.
@@ -46,4 +38,3 @@ Run the training and start training your agent.
 
 -   Make sure `swig` is installed before installing Box2D dependencies.    
 -   Box2D environments may require additional system libraries depending on your OS.
-    

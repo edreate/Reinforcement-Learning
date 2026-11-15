@@ -1,0 +1,11 @@
+# The web server (seddler-web). Each value can also be set by its SEDDLER_* variable, which wins
+# over this file; a Pi sets them in /etc/seddler/seddler.env. Folders are relative to where the
+# server starts.
+
+http_port = 8002                  # SEDDLER_PORT, or seddler-web --port, or make play PORT=
+
+[folders]
+game_recordings = "recordings"    # SEDDLER_RECORDINGS: one JSON Lines file per game
+saved_rooms = "rooms"             # SEDDLER_ROOMS: one file per room, so a restart ends no game
+bot_models = "models"             # SEDDLER_MODELS: trained models a host can seat as bots
+log_files = ""                    # SEDDLER_LOGS: also write seddler.log and access.log here; "": console only

@@ -21,8 +21,9 @@ dependencies = [
     "seddler[env]",
     "swig>=4.4.1",
     "torch>=2.10.0",
+    "torchvision",
 ]
 
 [tool.uv.sources]
-seddler = { git = "ssh://git@github.com/ibadrather/seddler.git", branch = "main" }
+seddler = { git = "ssh://git@github.com/ibadrather/seddler.git", branch = "feature/reward-design" }
 

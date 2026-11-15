@@ -1,0 +1,26 @@
+# The environment's reward (seddler.reward, docs/REWARD_PLAN.md): named terms, each weighted here
+# and summed into one number per step. Each term is also reported apart in info["reward_terms"],
+# under the same name as its key here.
+#
+# A step runs from just before the learner's move to just after the opponents' replies, so what
+# happens on their turns (losing longest road, say) counts too. The values are in game units:
+# the environment neither scales nor normalizes them; the training code does.
+#
+# catanatron's rewards: reward_for_winning_the_game = 1, reward_for_losing_the_game = -1,
+# reward_for_an_invalid_action = -1 and every other term 0.
+
+# Once, on the step the game ends
+reward_for_winning_the_game = 200.0                          # the learner reaches the points to win, on its own turn
+reward_for_losing_the_game = -200.0                          # another player wins
+reward_for_reaching_the_turn_limit_without_a_winner = 0.0    # cut off (truncated) after the dice-roll limit in game.toml
+
+# Times the change over the step
+reward_per_victory_point_the_learner_gains = 20.0            # all its points, hidden victory point cards too; a point lost counts minus
+reward_per_public_victory_point_the_opponents_gain = -2.0     # the sum of their public points only; negative (-20) to teach blocking
+reward_per_road_the_learner_builds = 0.0                     # activity, not progress: off, so roads to nowhere pay nothing
+reward_per_development_card_the_learner_buys = 0.0           # activity, not progress: off
+reward_per_road_building_card_the_learner_plays = 0.0        # activity, not progress: off
+reward_per_card_the_learner_discards_on_a_seven = -1.0       # each card given up for holding more than 7 when a 7 is rolled; small, a nudge to spend
+
+# Instead of every other term
+reward_for_an_invalid_action = -1.0                          # an action number that is not legal now: nothing moves

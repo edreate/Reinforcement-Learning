@@ -21,13 +21,15 @@ the printed and plotted episode rewards are unscaled.
 
 Run from the repository root::
 
-    uv run python src/seddler/dqn_seddler.py
+    uv run python src/deep-q-learning/seddler/dqn_seddler.py
+    uv run python src/deep-q-learning/seddler/dqn_seddler.py --episodes 2 --eval-episodes 2
 
 The trained network is saved as PyTorch weights and as one Seddler bot per table size
 (``dqn-2p``, ``dqn-3p``, ``dqn-4p``, each a ``card.json`` and a ``model.onnx``). Copy
 those folders into Seddler's ``models/`` folder to play against them.
 """
 
+import argparse
 import json
 import math
 import random
@@ -50,7 +52,7 @@ from seddler.codecs.catanatron import observation as catanatron_observation
 from seddler.env import BotMaker, SeddlerEnv
 from seddler.policies import HeuristicBot, RandomBot
 
-SRC_PATH = Path(__file__).resolve().parent.parent
+SRC_PATH = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC_PATH))
 
 from utils.model_saver import save_model_pytorch  # noqa: E402
@@ -205,7 +207,7 @@ class QNetwork(nn.Module):
     """
 
     def __init__(
-        self, n_obs: int, n_actions: int, hidden_sizes: tuple[int, int] = (256, 256)
+        self, n_obs: int, n_actions: int, hidden_sizes: tuple[int, int] = (1024, 1024)
     ) -> None:
         super().__init__()
         h1, h2 = hidden_sizes
@@ -696,7 +698,7 @@ def save_seddler_bots(
             "num_players": players,
             "weights": "model.onnx",
             "sample": False,
-            "trained_with": "Reinforcement-Learning src/seddler/dqn_seddler.py",
+            "trained_with": "Reinforcement-Learning src/deep-q-learning/seddler/dqn_seddler.py",
         }
         (bot_dir / "card.json").write_text(json.dumps(card, indent=2) + "\n")
     print(f"✅ Seddler bots written to {folder.resolve()}")
@@ -709,7 +711,16 @@ def save_seddler_bots(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--episodes", type=int, help="training games (default 500)")
+    parser.add_argument("--eval-episodes", type=int, help="evaluation games (default 20)")
+    args = parser.parse_args()
+
     training_config = DQNTrainingConfig()
+    if args.episodes is not None:
+        training_config.total_episodes = args.episodes
+    if args.eval_episodes is not None:
+        training_config.eval_episodes = args.eval_episodes
 
     seed = training_config.seed
     torch.manual_seed(seed)

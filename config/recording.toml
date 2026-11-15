@@ -1,0 +1,6 @@
+# What a recording logs beside each move (docs/RECORDINGS.md). A recording's header keeps the
+# values it was written with ("state_config"), so changing one here leaves older files replaying.
+
+[cards_seen_by_others]       # each player's cards as the other players can keep track of them
+memory_window_turns = 4      # remember only the cards a player got in this many turns, and has
+                             # not spent or played since; the turn being played is one of them

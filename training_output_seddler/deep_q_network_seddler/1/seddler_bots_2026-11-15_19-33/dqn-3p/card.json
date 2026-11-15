@@ -1,0 +1,9 @@
+{
+  "name": "DQN",
+  "description": "Deep Q-Network, 500 games against random bots at 2 to 4 player tables.",
+  "codec": "catanatron-v0",
+  "num_players": 3,
+  "weights": "model.onnx",
+  "sample": false,
+  "trained_with": "Reinforcement-Learning src/deep-q-learning/seddler/dqn_seddler.py"
+}

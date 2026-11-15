@@ -1,0 +1,9 @@
+# The training pipeline (docs/DATA_PLAN.md). Kept here, beside the game's defaults, so the
+# parameters a run depends on are in one place. A run records the values it used.
+
+[observation_encoder]             # the native-obs encoder (data plan, step 6)
+memory_window_turns = "one_round" # turns of history the agent sees; "one_round": one turn per player
+recent_event_slots = 32           # the most recent events the agent sees, newest first
+
+[self_play]                       # self-play runs (data plan, step 4)
+games_per_shard_file = 1000       # whole games per gzip file

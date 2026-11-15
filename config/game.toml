@@ -1,0 +1,11 @@
+# How a game plays when the code does not say otherwise: the defaults of GameConfig, which the
+# environment, self-play, training and tests build their games from (seddler.protocol.GameConfig).
+# Code can still set any of them, as with a gymnasium env: GameConfig(num_players=4, seed=7).
+#
+# The base game's fixed numbers (costs, deck, bank, board) are rules, not settings: they live in
+# src/seddler/engine/rules.py, because changing one changes how recorded games replay.
+
+number_of_players = 2            # 2 to 4
+victory_points_to_win = 10       # at least 3
+turn_limit_in_dice_rolls = 200   # the game is cut off (truncated) after this many rolls; 0: no limit
+friendly_robber_enabled = false  # the robber spares players with 2 visible points or fewer

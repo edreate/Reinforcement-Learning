@@ -1,0 +1,31 @@
+# Live rooms in the browser (seddler.rooms.Settings). For each setting the host can change:
+#   default  what a new room's lobby starts with; it must be one of the choices
+#   choices  what the lobby's menu offers; the server accepts any value up to the largest
+
+max_player_name_length = 20
+seconds_a_bot_waits_for_a_person_to_answer = 20  # then it withdraws its offer
+
+[victory_points_to_win]
+default = 10
+choices = [6, 8, 10, 12, 15]
+
+[seconds_to_roll]                 # then the dice roll by themselves; 0: no roll timer
+default = 10
+choices = [0, 5, 10, 15, 30]
+
+[seconds_per_turn]                # the rest of the turn, counted from the roll; 0: no turn timer
+default = 90
+choices = [0, 30, 45, 60, 90, 120]
+
+[bot_pause_seconds]               # before each bot move, so people can follow; 0: bots move at once
+default = 2.0
+choices = [0, 0.5, 1, 2, 3, 5]
+
+[friendly_robber_enabled]         # the robber spares players with 2 visible points or fewer
+default = true
+
+[dice_kind]                       # "balanced": close to the odds, sevens shared out; "random": fair dice
+default = "balanced"
+
+[bots_trade_with_people_enabled]  # heuristic v2 bots offer people trades and take theirs when it helps them
+default = true

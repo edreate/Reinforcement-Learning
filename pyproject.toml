@@ -18,7 +18,11 @@ dependencies = [
     "onnxruntime>=1.24.2",
     "onnxscript>=0.6.2",
     "ruff>=0.15.2",
+    "seddler[env]",
     "swig>=4.4.1",
     "torch>=2.10.0",
 ]
+
+[tool.uv.sources]
+seddler = { git = "ssh://git@github.com/ibadrather/seddler.git", branch = "main" }
 

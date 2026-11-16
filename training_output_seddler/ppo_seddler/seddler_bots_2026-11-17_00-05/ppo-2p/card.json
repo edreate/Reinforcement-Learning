@@ -1,0 +1,9 @@
+{
+  "name": "PPO",
+  "description": "PPO, 3000000 decisions against random bots at 2 to 4 player tables.",
+  "codec": "catanatron-v0",
+  "num_players": 2,
+  "weights": "model.onnx",
+  "sample": false,
+  "trained_with": "Reinforcement-Learning src/proximal-policy-optimization/seddler/ppo_seddler.py"
+}

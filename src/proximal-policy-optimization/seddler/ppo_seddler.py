@@ -23,19 +23,22 @@ this file), then run from the repository root::
 
     uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py
 
-The trained policy is saved as PyTorch weights and as one Seddler bot per table size
-(``ppo-2p``, ``ppo-3p``, ``ppo-4p``, each a ``card.json`` and a ``model.onnx``). Copy those
-folders into Seddler's ``models/`` folder to play against them.
+Each run folder gets ``trained_ppo.pth`` (a state_dict), ``train_config.json`` (the config,
+generation, best evaluation and the model spec that ``load_model`` rebuilds the network
+from), ``rewards.json`` (the training reward of every update and every evaluation) and the
+Seddler bot ``ppo-gen<N>/`` (``bot.json`` and ``ppo-2p.onnx`` / ``ppo-3p.onnx`` /
+``ppo-4p.onnx``). Copy that folder into Seddler's ``models/`` folder to play against it.
 """
 
 import argparse
+import copy
 import json
 import multiprocessing as mp
 import random
 import sys
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -50,7 +53,6 @@ from numpy.typing import NDArray
 SRC_PATH = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC_PATH))
 
-from utils.model_saver import save_model_pytorch  # noqa: E402
 from utils.plot_rl_results import plot_training_statistics  # noqa: E402
 from utils.seddler_table import (  # noqa: E402
     OPPONENT_BOTS,
@@ -66,10 +68,10 @@ OUTPUT_DIR = REPO_ROOT / "training_output_seddler" / "ppo_seddler"
 @dataclass
 class PPOTrainingConfig:
     seed: int = 42
-    total_timesteps: int = 24_000_000  # decisions, over all environments (a game is ~70)
+    total_timesteps: int = 16_000_000  # decisions, over all environments (a game is ~70)
     # num_envs * num_steps is the rollout, one update's worth of decisions. Keep it near
     # 4096: a larger one means fewer updates for the same total_timesteps.
-    num_envs: int = 32  # games played at once, a process each (about 175 MB each)
+    num_envs: int = 16  # games played at once, a process each (about 175 MB each)
     num_steps: int = 128  # decisions per environment in a rollout
     num_minibatches: int = 8
     update_epochs: int = 4
@@ -83,6 +85,12 @@ class PPOTrainingConfig:
     hidden_sizes: tuple[int, int] = (512, 512)
     reward_scale: float = 0.01  # game units (+-200 a game, 20 a point) to the network's
     eval_episodes: int = 300
+    eval_every: int = 500  # updates between evaluations; the best one is kept
+    init_weights: str | None = None  # a run's trained_ppo.pth to continue from, None = scratch
+    # Generation of the starting weights: 0 = scratch. When init_weights has a
+    # train_config.json next to it, its generation is read from there. The run trains
+    # generation + 1 and writes its bots as ppo-gen<generation + 1>/.
+    generation: int = 0
     opponent_counts: tuple[int, ...] = (1, 2, 3)  # bots at the table, drawn per game
     opponent: str = "random"  # "random" or "heuristic"
     device: str = "auto"  # "auto" (cuda, then mps, then cpu), "cuda", "mps" or "cpu"
@@ -291,6 +299,67 @@ class ActorCritic(nn.Module):
         return actions, log_prob, entropy, self.critic(x).squeeze(-1)
 
 
+def model_spec(model: ActorCritic) -> dict[str, Any]:
+    """Everything needed to rebuild ``model`` in PyTorch and load ``trained_ppo.pth``
+    (a ``state_dict``) into it; written to ``train_config.json`` under ``"model"``."""
+    n_obs = int(model.obs_mean.shape[0])
+    n_actions = int(model.actor[-1].out_features)
+    h1, h2 = model.actor[0].out_features, model.actor[2].out_features
+    return {
+        "class": "ActorCritic",
+        "source": "src/proximal-policy-optimization/seddler/ppo_seddler.py",
+        "weights": "trained_ppo.pth",
+        "weights_format": "state_dict (torch.save(model.state_dict()))",
+        "constructor": {"n_obs": n_obs, "n_actions": n_actions, "hidden_sizes": [h1, h2]},
+        "actor": [
+            f"Linear({n_obs}, {h1})",
+            "Tanh",
+            f"Linear({h1}, {h2})",
+            "Tanh",
+            f"Linear({h2}, {n_actions})",
+        ],
+        "critic": [
+            f"Linear({n_obs}, {h1})",
+            "Tanh",
+            f"Linear({h1}, {h2})",
+            "Tanh",
+            f"Linear({h2}, 1)",
+        ],
+        "obs_normalization": {
+            "formula": "clamp((x - obs_mean) / clamp(sqrt(obs_var), min=min_obs_std), "
+            "-max_normalized_obs, max_normalized_obs)",
+            "buffers": ["obs_mean", "obs_var", "obs_count"],  # in the state_dict
+            "min_obs_std": MIN_OBS_STD,
+            "max_normalized_obs": MAX_NORMALIZED_OBS,
+        },
+        "outputs": {
+            "forward": f"logits (B, {n_actions}) of the normalized input",
+            "value": "state value (B,)",
+        },
+        "action_masking": {"illegal_logit": MASKED_LOGIT},
+        "state_dict_shapes": {k: list(v.shape) for k, v in model.state_dict().items()},
+        "num_parameters": sum(p.numel() for p in model.parameters()),
+        "torch_version": torch.__version__,
+    }
+
+
+def load_model(run_dir: str | Path, device: str | torch.device = "cpu") -> ActorCritic:
+    """Rebuild a run's ``ActorCritic`` from its ``train_config.json`` and load its weights."""
+    run_dir = Path(run_dir)
+    spec = json.loads((run_dir / "train_config.json").read_text())["model"]
+    args = spec["constructor"]
+    model = ActorCritic(args["n_obs"], args["n_actions"], tuple(args["hidden_sizes"]))
+    model.load_state_dict(torch.load(run_dir / spec["weights"], map_location=device))
+    return model.to(device).eval()
+
+
+def write_json(path: Path, data: Any, indent: int | None = None) -> None:
+    """Write ``data`` as JSON, whole or not at all (a stopped run leaves a valid file)."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=indent) + "\n")
+    tmp.replace(path)
+
+
 # =============================================================================
 # 3. The PPO Algorithm - Step by Step
 # =============================================================================
@@ -391,7 +460,15 @@ def train_ppo(
     envs: ParallelEnvs,
     model: ActorCritic,
     optimizer: optim.Optimizer,
+    eval_env: AnyTableSeddlerEnv,
+    run_dir: Path,
 ) -> tuple[ActorCritic, list[float], list[int]]:
+    """Train; every ``eval_every`` updates evaluate, and save the weights when they beat
+    the best evaluation so far (the first one is of the starting weights). Every update's
+    training reward and every evaluation go to ``rewards.json``; the run's config and best
+    evaluation to ``train_config.json``. The best weights are loaded back into ``model``
+    at the end.
+    """
     num_steps, num_envs = training_config.num_steps, training_config.num_envs
     n_obs, n_actions = model.obs_mean.shape[0], model.actor[-1].out_features
     rollout_size = num_steps * num_envs
@@ -413,6 +490,42 @@ def train_ppo(
     recent_wins: deque[bool] = deque(maxlen=500)
     recent_rewards: deque[float] = deque(maxlen=500)
 
+    weights_path = run_dir / "trained_ppo.pth"
+    metadata: dict[str, Any] = {
+        "started": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "generation": training_config.generation + 1,
+        "bot": f"ppo-gen{training_config.generation + 1}",
+        "num_updates": num_updates,
+        "model": model_spec(model),
+        "config": asdict(training_config),
+        "best_eval_reward": None,
+        "best_update": None,
+    }
+    rewards_log: dict[str, list[dict[str, Any]]] = {"train": [], "eval": []}
+
+    def evaluate_and_save(update: int) -> None:
+        eval_reward, eval_win_rate, win_rate_by_players = evaluate_policy(
+            model, training_config, eval_env
+        )
+        rewards_log["eval"].append(
+            {
+                "update": update,
+                "steps": update * rollout_size,
+                "reward": eval_reward,
+                "win_rate": eval_win_rate,
+                "win_rate_by_players": win_rate_by_players,
+            }
+        )
+        write_json(run_dir / "rewards.json", rewards_log)
+        best = metadata["best_eval_reward"]
+        if best is None or eval_reward > best:
+            metadata["best_eval_reward"], metadata["best_update"] = eval_reward, update
+            torch.save(model.state_dict(), weights_path)
+            print(f"[Eval] new best {eval_reward:.2f}, saved {weights_path.name}")
+        write_json(run_dir / "train_config.json", metadata, indent=2)
+
+    evaluate_and_save(0)  # the starting weights: the bar to beat
+
     state_np, mask_np = envs.first()
     state = torch.as_tensor(state_np, device=device)
     mask = torch.as_tensor(mask_np, device=device)
@@ -425,6 +538,8 @@ def train_ppo(
         )
 
         # --- Collect a rollout with the current policy ---
+        update_rewards: list[float] = []  # the games that ended during this rollout
+        update_wins: list[bool] = []
         for t in range(num_steps):
             states[t], masks[t] = state, mask
             with torch.no_grad():
@@ -446,6 +561,8 @@ def train_ppo(
                 episode_lengths.append(episode["length"])
                 recent_rewards.append(episode["reward"])
                 recent_wins.append(episode["won"])
+                update_rewards.append(episode["reward"])
+                update_wins.append(episode["won"])
 
         # --- Advantages and returns ---
         with torch.no_grad():
@@ -476,9 +593,26 @@ def train_ppo(
         # log-probs were computed with the scale the update used)
         model.update_normalization(flat_states)
 
+        steps_done = (update + 1) * rollout_size
+        minutes = (time.monotonic() - started) / 60
+        rewards_log["train"].append(
+            {
+                "update": update + 1,
+                "steps": steps_done,
+                "games": len(episode_rewards),
+                "update_games": len(update_rewards),
+                "update_reward": float(np.mean(update_rewards)) if update_rewards else None,
+                "update_win_rate": float(np.mean(update_wins)) if update_wins else None,
+                "last500_reward": float(np.mean(recent_rewards or [0.0])),
+                "last500_win_rate": float(np.mean(recent_wins or [False])),
+                **stats,
+                "learning_rate": optimizer.param_groups[0]["lr"],
+                "minutes": minutes,
+            }
+        )
+        write_json(run_dir / "rewards.json", rewards_log)
+
         if (update + 1) % 10 == 0 or update == 0 or update == num_updates - 1:
-            steps_done = (update + 1) * rollout_size
-            minutes = (time.monotonic() - started) / 60
             print(
                 f"[Update {update + 1:4d}/{num_updates}]  steps={steps_done:8d}  "
                 f"games={len(episode_rewards):6d}  "
@@ -489,6 +623,16 @@ def train_ppo(
                 flush=True,
             )
 
+        if (update + 1) % training_config.eval_every == 0 or update == num_updates - 1:
+            evaluate_and_save(update + 1)
+
+    print(
+        f"Best evaluation: {metadata['best_eval_reward']:.2f} "
+        f"at update {metadata['best_update']}"
+    )
+    metadata["finished"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    write_json(run_dir / "train_config.json", metadata, indent=2)
+    model.load_state_dict(torch.load(weights_path, map_location=device))
     return model, episode_rewards, episode_lengths
 
 
@@ -502,12 +646,13 @@ def evaluate_policy(
     model: ActorCritic,
     training_config: PPOTrainingConfig,
     env: AnyTableSeddlerEnv,
-) -> float:
+) -> tuple[float, float, dict[str, float]]:
     """
     Run evaluation games taking the legal action with the highest logit, as the exported
-    bot plays. Returns mean return; prints the win rate at each table size.
+    bot plays. Returns mean return, win rate, and win rate per table size ({"2": ...}).
+    The same seed every time, so evaluations during a run see the same games.
     """
-    model = model.to("cpu").eval()
+    model = copy.deepcopy(model).to("cpu").eval()  # a copy: training goes on on the device
     total_reward = 0.0
     games: dict[int, list[bool]] = {}
 
@@ -537,7 +682,9 @@ def evaluate_policy(
             f"[Eval] {players} players: won {sum(won)} of {len(won)} "
             f"({sum(won) / len(won):.0%}; chance alone: {1 / players:.0%})"
         )
-    return average_reward
+    all_games = [w for won in games.values() for w in won]
+    by_players = {str(p): sum(won) / len(won) for p, won in sorted(games.items())}
+    return average_reward, sum(all_games) / max(len(all_games), 1), by_players
 
 
 # =============================================================================
@@ -549,22 +696,25 @@ def save_seddler_bots(
     model: ActorCritic,
     env: AnyTableSeddlerEnv,
     training_config: PPOTrainingConfig,
-    output_dir: Path = OUTPUT_DIR,
+    folder: Path,
 ) -> Path:
-    """Write ``ppo-<n>p/`` (card.json and model.onnx) for each table size trained on."""
+    """Write the bot folder ``ppo-gen<N>/``: ``bot.json`` and one ``ppo-<n>p.onnx`` per
+    table size trained on. Copy the folder into Seddler's ``models/`` to play it."""
     model = model.to("cpu").eval()
-    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M")
-    folder = output_dir / f"seddler_bots_{timestamp}"
+    generation = training_config.generation + 1
+    bot_dir = folder / f"ppo-gen{generation}"
+    bot_dir.mkdir(parents=True, exist_ok=True)
+    models: dict[str, str] = {}
     for players in sorted(env.envs):
         table_model = TableNetwork(model, env, players).eval()
         n_features = len(env.feature_index[players])
-        bot_dir = folder / f"ppo-{players}p"
-        bot_dir.mkdir(parents=True, exist_ok=True)
+        onnx_name = f"ppo-{players}p.onnx"
+        models[str(players)] = onnx_name
         with torch.no_grad():
             torch.onnx.export(
                 table_model,
                 (torch.zeros(1, n_features),),
-                (bot_dir / "model.onnx").as_posix(),
+                (bot_dir / onnx_name).as_posix(),
                 input_names=["obs"],
                 output_names=["logits"],
                 dynamic_shapes=({0: torch.export.Dim("batch")},),
@@ -572,24 +722,19 @@ def save_seddler_bots(
                 external_data=False,
                 verbose=False,
             )
-        card = {
-            "name": "PPO",
-            "description": (
-                f"PPO, {training_config.total_timesteps} decisions against "
-                f"{training_config.opponent} bots at 2 to 4 player tables."
-            ),
-            "codec": "catanatron-v0",
-            "num_players": players,
-            "weights": "model.onnx",
-            "sample": False,
-            "trained_with": (
-                "Reinforcement-Learning "
-                "src/proximal-policy-optimization/seddler/ppo_seddler.py"
-            ),
-        }
-        (bot_dir / "card.json").write_text(json.dumps(card, indent=2) + "\n")
-    print(f"✅ Seddler bots written to {folder.resolve()}")
-    return folder
+    decisions = f"{training_config.total_timesteps / 1e6:g}M"
+    parent = f", continued from gen{generation - 1}" if generation > 1 else ""
+    bot = {
+        "name": f"PPO gen{generation}",
+        "description": (
+            f"PPO, {decisions} decisions against {training_config.opponent} bots{parent}."
+        ),
+        "codec": "catanatron-v0",
+        "models": models,
+    }
+    write_json(bot_dir / "bot.json", bot, indent=2)
+    print(f"✅ Seddler bot written to {bot_dir.resolve()}")
+    return bot_dir
 
 
 # =============================================================================
@@ -616,7 +761,9 @@ def main() -> None:
     parser.add_argument(
         "--opponent", choices=sorted(OPPONENT_BOTS), help="default random"
     )
-    parser.add_argument("--init", type=Path, help="weights (.pth) to start from")
+    parser.add_argument(
+        "--init", help="weights (.pth) to start from (default: config init_weights)"
+    )
     parser.add_argument("--output-dir", type=Path, help=f"default {OUTPUT_DIR}")
     args = parser.parse_args()
 
@@ -629,6 +776,19 @@ def main() -> None:
         training_config.num_envs = args.num_envs
     if args.opponent is not None:
         training_config.opponent = args.opponent
+    if args.init is not None:
+        training_config.init_weights = args.init
+    if training_config.init_weights is not None:
+        # continue the generation count of the run the weights come from
+        parent_config = Path(training_config.init_weights).parent / "train_config.json"
+        if parent_config.exists():
+            parent_generation = json.loads(parent_config.read_text()).get("generation")
+            if parent_generation is not None:
+                training_config.generation = int(parent_generation)
+    print(
+        f"Generation: starting from gen{training_config.generation}, "
+        f"training gen{training_config.generation + 1}"
+    )
 
     seed = training_config.seed
     torch.manual_seed(seed)
@@ -668,11 +828,22 @@ def main() -> None:
     model = ActorCritic(n_observations, n_actions, training_config.hidden_sizes).to(
         device
     )
-    if args.init is not None:
-        model.load_state_dict(torch.load(args.init, map_location=device))
+    if training_config.init_weights is not None:
+        print(f"Starting from {training_config.init_weights}")
+        model.load_state_dict(
+            torch.load(training_config.init_weights, map_location=device)
+        )
     optimizer = optim.Adam(
         model.parameters(), lr=training_config.learning_rate, eps=1e-5
     )
+
+    # Everything of this run goes in one folder: weights, train_config.json, rewards.json,
+    # plot, bot
+    timestamp = datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M")
+    generation = training_config.generation + 1
+    run_dir = (args.output_dir or OUTPUT_DIR) / f"run_gen{generation}_{timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Run folder: {run_dir}")
 
     envs = ParallelEnvs(training_config)
     try:
@@ -682,29 +853,25 @@ def main() -> None:
             envs=envs,
             model=model,
             optimizer=optimizer,
+            eval_env=eval_env,
+            run_dir=run_dir,
         )
     finally:
         envs.close()
 
-    # Evaluation
-    evaluate_policy(model, training_config, eval_env)
-
     # Visualize Training Results
-    output_dir = args.output_dir or OUTPUT_DIR
-    output_dir.mkdir(parents=True, exist_ok=True)
     if episode_rewards:
         plot_training_statistics(
             episode_rewards=episode_rewards,
             episode_lengths=episode_lengths,
             title="PPO on Seddler",
-            save_path=str(output_dir / "ppo_seddler_training_results"),
+            save_path=str(run_dir / "ppo_seddler_training_results"),
             window=500,
             show=False,
         )
 
-    # Save Network to Disk
-    save_model_pytorch(model, output_dir / "trained_ppo")
-    save_seddler_bots(model, eval_env, training_config, output_dir)
+    # The best weights (already saved as trained_ppo.pth) as Seddler bots
+    save_seddler_bots(model, eval_env, training_config, run_dir)
 
 
 if __name__ == "__main__":

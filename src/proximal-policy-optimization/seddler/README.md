@@ -19,9 +19,28 @@ Edit it, then run from the repository root:
 uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py
 ```
 
-On a Mac, prefix `caffeinate -i` so it does not sleep during a long run. The weights,
-the training plot and the `ppo-2p` / `ppo-3p` / `ppo-4p` bots go to
-`training_output_seddler/ppo_seddler/`.
+On a Mac, prefix `caffeinate -i` so it does not sleep during a long run. Each run gets
+its own folder, `training_output_seddler/ppo_seddler/run_gen<N>_<date>_<time>/` (`<N>` is
+the generation it trains):
+
+| File | What it holds |
+|---|---|
+| `trained_ppo.pth` | The best weights, as a `state_dict` |
+| `train_config.json` | The config, the generation, the best evaluation, and under `"model"` everything needed to rebuild the network (`load_model(run_dir)` in `ppo_seddler.py` does it) |
+| `rewards.json` | `"train"`: one entry per update (reward and win rate of the games that ended in it and of the last 500, losses, entropy, learning rate). `"eval"`: one entry per evaluation (reward, win rate, win rate per table size). Rewritten after every update, so it can be plotted while the run goes |
+| `ppo-gen<N>/` | The Seddler bot: `bot.json` and `ppo-2p.onnx` / `ppo-3p.onnx` / `ppo-4p.onnx`. Copy the folder into Seddler's `models/` |
+| `ppo_seddler_training_results.png` | The training plot |
+
+Every `eval_every` updates (and at the start and end) the policy plays `eval_episodes`
+games on the same seed; `trained_ppo.pth` is overwritten only when the mean reward beats
+the best so far, and the bot is exported from that best.
+
+**Generations:** set `init_weights` to the previous run's `trained_ppo.pth` to continue
+from it (`None` trains from scratch). The first evaluation is then of those weights, so
+the new run only saves weights that beat them. `generation` in the config is the starting
+weights' generation (0 = scratch); the run trains `generation + 1` and names its bot
+`ppo-gen<generation + 1>`. When `init_weights` sits next to a `train_config.json`, the
+generation is read from there, so chained runs count up on their own.
 
 **What to set**
 
@@ -63,8 +82,8 @@ Pro, picking moves is faster on the CPU (0.6 ms vs 0.9 ms on MPS) and an update 
 is faster on MPS (2 ms vs 10 ms); over a run they come out about even. CUDA, which
 copies to and from the GPU more cheaply, should gain a little more.
 
-To continue from saved weights, or train against the heuristic bots, the old flags still
-work: `--init <weights.pth>`, `--opponent heuristic`.
+The flags `--init <weights.pth>` (sets `init_weights`) and `--opponent heuristic` still
+work.
 
 ## Result
 

@@ -10,13 +10,69 @@ What was tried to make an agent learn Seddler, in order, and what each step did.
 - **Code:** DQN in `src/deep-q-learning/seddler/dqn_seddler.py`, PPO in `ppo_seddler.py`
   here, the environment both use in `src/utils/seddler_table.py`.
 
+## How to train
+
+All settings live in the `PPOTrainingConfig` dataclass at the top of `ppo_seddler.py`.
+Edit it, then run from the repository root:
+
+```
+uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py
+```
+
+On a Mac, prefix `caffeinate -i` so it does not sleep during a long run. The weights,
+the training plot and the `ppo-2p` / `ppo-3p` / `ppo-4p` bots go to
+`training_output_seddler/ppo_seddler/`.
+
+**What to set**
+
+| Field | What it does | Set to |
+|---|---|---|
+| `total_timesteps` | Decisions to train for, over all games (a game is about 70) | 24M for a long run; 3M takes ~30 min at 8 games |
+| `num_envs` | Games played at once, one process each (about 175 MB of RAM each) | The machine's core count or a bit more: 32 on the M2 Pro or the 32-thread i9 |
+| `num_steps` | Decisions each game plays before an update | `4096 / num_envs`: 128 for 32 games, 512 for 8 |
+| `device` | Where the network runs | `"auto"`: CUDA, then MPS, then CPU |
+| `opponent` | Bots at the table | `"random"`, or `"heuristic"` once the policy beats random bots |
+| `eval_episodes` | Greedy games played after training to report win rates | 300; 20 for a quick test |
+
+**The rule to keep:** `num_envs * num_steps` is one update's batch. Keep it near 4096.
+Raising `num_envs` without lowering `num_steps` makes each update bigger and the number of
+updates smaller for the same `total_timesteps`, so the policy learns less per decision.
+
+**Ready-made settings**
+
+| Run | `total_timesteps` | `num_envs` | `num_steps` | Time on the M2 Pro |
+|---|---|---|---|---|
+| Smoke test (also set `eval_episodes = 20`) | 20_000 | 8 | 512 | ~1 min |
+| The 3M run reported below | 3_000_000 | 8 | 512 | ~30 min |
+| Long run (current values) | 24_000_000 | 32 | 128 | ~2.5 h (estimate) |
+
+**How many games at once (measured on the M2 Pro, 12 cores, games only)**
+
+| `num_envs` | Decisions/s | RAM of the game processes |
+|---|---|---|
+| 8 | 1,835 | 1.9 GB |
+| 16 | 2,566 | 3.3 GB |
+| 24 | 2,952 | 4.5 GB |
+| 32 | 3,154 | 5.6 GB |
+
+Gains flatten past the number of performance cores. On a machine with more cores, more
+games pay off further.
+
+**Device:** the games take most of the time, so the device matters little. On the M2
+Pro, picking moves is faster on the CPU (0.6 ms vs 0.9 ms on MPS) and an update minibatch
+is faster on MPS (2 ms vs 10 ms); over a run they come out about even. CUDA, which
+copies to and from the GPU more cheaply, should gain a little more.
+
+To continue from saved weights, or train against the heuristic bots, the old flags still
+work: `--init <weights.pth>`, `--opponent heuristic`.
+
 ## Result
 
 | Algorithm | Training | Wins at 2 / 3 / 4 players | Evaluation games |
 |---|---|---|---|
 | DQN, as first committed | 500 games, ~19 min | did not learn (flat reward curve) | - |
 | DQN, stabilised (current defaults) | 4000 games, ~28 min | 44% / 38% / 23% | 150 |
-| PPO (current defaults) | 3M decisions (~50,000 games), ~30 min | 95% / 86% / 79% | 300 |
+| PPO, 3M run | 3M decisions (~50,000 games), ~30 min | 95% / 86% / 79% | 300 |
 
 PPO trained only against random bots does not beat the heuristic bots: a 1.5M-decision
 policy won 1 of 90 games against `HeuristicBot`.
@@ -89,7 +145,7 @@ policy won 1 of 90 games against `HeuristicBot`.
 | 7b | 4000 games, n = 5, lr 3e-4, gradient step every 2 decisions | LayerNorm | 44% / 38% / 23%, 28 min. Kept as the DQN default |
 | 7c | 4000 games, n = 5, no LayerNorm, spread floor 30 | partly state-blind | 64% / 61% / 31%: better only because it sees less of the board |
 | 8 | PPO | 1.5M decisions, 10 processes | 93% / 83% / 64% in 13 min |
-| 9 | PPO, default run | 3M decisions, 8 processes | 95% / 86% / 79% in 30 min |
+| 9 | PPO, 3M run | 3M decisions, 8 processes | 95% / 86% / 79% in 30 min |
 
 Evaluation sizes: 90 games for steps 2-3 (1500 games), 60 for step 6, 150 for step 7
 and the 4000-game run of step 3, 300 for steps 8-9. The small ones are noisy; read
@@ -115,14 +171,14 @@ them as "learning or not", not as exact rates.
 | Networks | Separate actor and critic, each 1002 -> 512 -> 512, tanh, orthogonal init; the actor's last layer starts near zero so the policy starts near uniform over legal actions |
 | Masking | Logits of illegal actions set to -1e9 before the softmax; the mask of every step is stored in the rollout and reused in the update |
 | Input | Running mean and variance kept in the network (so the exported bot has them), spread floor 0.1, clipped to +-5 |
-| Rollout | 8 game processes x 512 decisions = 4096 per update |
+| Rollout | 32 game processes x 128 decisions = 4096 per update (the 3M run: 8 x 512) |
 | Update | 4 epochs, 8 minibatches of 512, clip 0.2, value coefficient 0.5, entropy coefficient 0.01, gradient norm clipped at 0.5 |
 | Advantages | GAE, gamma 0.995, lambda 0.95, normalised per minibatch |
 | Optimiser | Adam, lr 3e-4 falling linearly to 0 |
-| Device | CPU: the networks are small and the game processes take most of the time |
-| Speed | About 1700 decisions/s |
+| Device | `device = "auto"` (CUDA, then MPS, then CPU); the game processes take most of the time, so it matters little. The 3M run used the CPU |
+| Speed | About 1700 decisions/s with 8 games (the 3M run) |
 
-How the default run went (training games, sampled actions, last 500 games):
+How the 3M run went (training games, sampled actions, last 500 games):
 
 | Decisions | Minutes | Wins | Policy entropy |
 |---|---|---|---|

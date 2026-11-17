@@ -18,11 +18,10 @@ The rest is PPO as usual: rollouts of ``num_steps`` decisions per environment, G
 advantages, the clipped surrogate loss, a value loss and an entropy bonus, several epochs of
 minibatches per rollout, a learning rate that falls to zero.
 
-Run from the repository root::
+Set the run up in ``PPOTrainingConfig`` below (see "How to train" in the README next to
+this file), then run from the repository root::
 
     uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py
-    uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py --timesteps 20000 --eval-episodes 20
-    uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py --opponent heuristic
 
 The trained policy is saved as PyTorch weights and as one Seddler bot per table size
 (``ppo-2p``, ``ppo-3p``, ``ppo-4p``, each a ``card.json`` and a ``model.onnx``). Copy those
@@ -67,9 +66,11 @@ OUTPUT_DIR = REPO_ROOT / "training_output_seddler" / "ppo_seddler"
 @dataclass
 class PPOTrainingConfig:
     seed: int = 42
-    total_timesteps: int = 3_000_000  # decisions, over all environments (a game is ~70)
-    num_envs: int = 8  # games played at once, a process each
-    num_steps: int = 512  # decisions per environment in a rollout
+    total_timesteps: int = 24_000_000  # decisions, over all environments (a game is ~70)
+    # num_envs * num_steps is the rollout, one update's worth of decisions. Keep it near
+    # 4096: a larger one means fewer updates for the same total_timesteps.
+    num_envs: int = 32  # games played at once, a process each (about 175 MB each)
+    num_steps: int = 128  # decisions per environment in a rollout
     num_minibatches: int = 8
     update_epochs: int = 4
     gamma: float = 0.995
@@ -84,6 +85,7 @@ class PPOTrainingConfig:
     eval_episodes: int = 300
     opponent_counts: tuple[int, ...] = (1, 2, 3)  # bots at the table, drawn per game
     opponent: str = "random"  # "random" or "heuristic"
+    device: str = "auto"  # "auto" (cuda, then mps, then cpu), "cuda", "mps" or "cpu"
 
 
 # =============================================================================
@@ -597,11 +599,20 @@ def save_seddler_bots(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--timesteps", type=int, help="training decisions (default 3M)")
+    defaults = PPOTrainingConfig()
+    parser.add_argument(
+        "--timesteps",
+        type=int,
+        help=f"training decisions (default {defaults.total_timesteps:,})",
+    )
     parser.add_argument(
         "--eval-episodes", type=int, help="evaluation games (default 300)"
     )
-    parser.add_argument("--num-envs", type=int, help="games played at once (default 8)")
+    parser.add_argument(
+        "--num-envs",
+        type=int,
+        help=f"games played at once (default {defaults.num_envs})",
+    )
     parser.add_argument(
         "--opponent", choices=sorted(OPPONENT_BOTS), help="default random"
     )
@@ -624,10 +635,27 @@ def main() -> None:
     np.random.seed(seed)  # noqa: NPY002 - as in the notebooks
     random.seed(seed)
 
-    # The networks are small and the batches of moves smaller: the CPU is as fast as a GPU
-    # here, and the game processes take most of the time anyway.
-    device = torch.device("cpu")
+    # The game processes take most of the time, so the device matters little. Measured
+    # on an M-series Mac: picking moves for 8 games is faster on the CPU (0.6 ms vs
+    # 0.9 ms on MPS, which pays a copy each way), a minibatch update is faster on the
+    # GPU (2 ms vs 10 ms).
+    if training_config.device == "auto":
+        device = torch.device(
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
+    else:
+        device = torch.device(training_config.device)
     print("Using device: ", device)
+    rollout_size = training_config.num_envs * training_config.num_steps
+    print(
+        f"Rollout: {training_config.num_envs} games"
+        f" x {training_config.num_steps} decisions = {rollout_size} per update,"
+        f" {max(training_config.total_timesteps // rollout_size, 1)} updates"
+    )
 
     eval_env = AnyTableSeddlerEnv(
         training_config.opponent_counts, OPPONENT_BOTS[training_config.opponent]

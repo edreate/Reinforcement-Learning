@@ -10,10 +10,302 @@ What was tried to make an agent learn Seddler, in order, and what each step did.
 - **Code:** DQN in `src/deep-q-learning/seddler/dqn_seddler.py`, PPO in `ppo_seddler.py`
   here, the environment both use in `src/utils/seddler_table.py`.
 
-## How to train
+## Pretraining, then PPO
 
-All settings live in the `PPOTrainingConfig` dataclass at the top of `ppo_seddler.py`.
-Edit it, then run from the repository root:
+PPO from scratch against the heuristic bots does not learn, so the network first learns
+from games played in Seddler (supervised, behaviour cloning), then PPO fine-tunes it.
+
+| Step | Where | Settings |
+|---|---|---|
+| 0. Play many games with `SeddlerEnv`, write them as shards | a collection script (below) | its constants |
+| 1. Supervised pretraining | `pretrain.py` | `PretrainConfig` |
+| 2. PPO from the pretrained weights | `ppo_seddler.py` | `PPOTrainingConfig` |
+
+All settings are dataclasses in `seddler_config.py`. `ModelConfig` sets the network size
+(`hidden_sizes`) for both steps, and both build `ActorCritic` from `model.py`, so the
+pretrained weights load straight into PPO.
+
+| File | What it holds |
+|---|---|
+| `seddler_config.py` | `ModelConfig`, `PretrainConfig`, `PPOTrainingConfig` |
+| `model.py` | `ActorCritic` (actor and critic MLPs, input standardization), `load_model` |
+| `dataset.py` | Reads the shards, the DataLoaders for pretraining |
+| `pretrain.py` | Supervised training: actor on the moves played, critic on the returns |
+| `ppo_seddler.py` | PPO: parallel games, rollouts, GAE, the clipped update |
+| `common.py` | Evaluation games, export as a Seddler bot, seeding, device |
+
+### 0. Collect games with `SeddlerEnv`
+
+The data is games played with Seddler's own environment, `seddler.env.SeddlerEnv`, not
+the `AnyTableSeddlerEnv` wrapper PPO trains in: one row per move of one seat (the
+*teacher*, whose moves the network learns), at the table's own size and numbering.
+`dataset.py` does the conversion to PPO's layout when it loads them.
+
+**How a game is recorded.** `SeddlerEnv([Bot] * opponents)` deals a game and plays the
+other seats with those bots. At each of the teacher's moves:
+
+1. `obs` is the observation `reset` / `step` returned, `env.action_masks()` the legal moves.
+2. The teacher picks a move. A Seddler bot answers with a game move, not a number:
+   `teacher.choose(env.game, env.seat)`, then `env.codec.encode(env.game, move)` gives its
+   number. A few of the teacher's moves (about 2% of the old `HeuristicBot`'s) have no number
+   in the codec (or not a legal one); a random legal number is played instead.
+3. `env.step(action)` plays it and the opponents' replies, and returns the reward (game
+   units: +200 win, -200 loss, +20 per own point, ...) and whether the game ended.
+
+Every move is recorded, the forced ones (a single legal action) too: `SeddlerEnv` does
+not skip them, and their rewards belong in the returns. The loader drops them afterwards.
+
+**The script.** Save it as, say, `collect_games.py` and run it from the repository root
+(`uv run python collect_games.py`); it writes to `training_output_seddler/data/`, the
+default `PretrainConfig.data_dir`:
+
+```python
+"""Play games in Seddler and write them as .npz shards for pretrain.py."""
+
+import random
+from pathlib import Path
+
+import numpy as np
+from seddler.env import SeddlerEnv
+from seddler.policies import PlannerBot
+
+OUT_DIR = Path("training_output_seddler/data")  # PretrainConfig.data_dir
+NUM_SHARDS = 300  # cycles through 2, 3, 4 players
+GAMES_PER_SHARD = 100
+TEACHER = PlannerBot  # whose moves the network learns
+OPPONENT = PlannerBot  # who plays the other seats
+
+
+def play_shard(players: int, seed: int) -> dict[str, np.ndarray]:
+    """GAMES_PER_SHARD whole games at one table size, one row per move of the teacher."""
+    env = SeddlerEnv([OPPONENT] * (players - 1))
+    teacher = TEACHER(random.Random(seed))
+    rows: dict[str, list] = {k: [] for k in ("obs", "mask", "action", "reward", "done")}
+    for game in range(GAMES_PER_SHARD):
+        obs, info = env.reset(seed=seed + game)
+        done = False
+        while not done:
+            move = teacher.choose(env.game, env.seat)
+            action = env.codec.encode(env.game, move)  # the move as a codec number
+            if action not in info["valid_actions"]:  # no number for it: rare (~2%)
+                action = random.choice(info["valid_actions"])
+            rows["obs"].append(obs)
+            rows["mask"].append(env.action_masks())
+            rows["action"].append(action)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            rows["reward"].append(reward)
+            rows["done"].append(done)
+    return {
+        "obs": np.asarray(rows["obs"], dtype=np.float32),
+        "mask": np.asarray(rows["mask"], dtype=np.bool_),
+        "action": np.asarray(rows["action"], dtype=np.int64),
+        "reward": np.asarray(rows["reward"], dtype=np.float32),
+        "done": np.asarray(rows["done"], dtype=np.bool_),
+    }
+
+
+def main() -> None:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for shard in range(NUM_SHARDS):
+        # Interleave the table sizes: the last shards by name become the validation set
+        players = (2, 3, 4)[shard % 3]
+        arrays = play_shard(players, seed=shard * GAMES_PER_SHARD)
+        path = OUT_DIR / f"shard_{shard:05d}.npz"
+        np.savez_compressed(path, **arrays)
+        print(f"{path}: {players} players, {len(arrays['action']):,} moves", flush=True)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+To learn from someone other than `PlannerBot`, change `TEACHER` (any Seddler bot, e.g.
+`RandomBot`) or replace the two lines that pick `action` (a person, an exported
+model through `CodecBot`). `OPPONENT` sets who the teacher plays against.
+
+**Cost, measured on the M2 Pro** (one process, `HeuristicBot` against `HeuristicBot`, before seddler replaced both
+heuristic bots with `PlannerBot`):
+about 0.16 s and 5 KB on disk per game. The 30,000 games above take about 80 minutes and
+150 MB; to go faster, run several copies at once, each on its own range of shard numbers
+(and so its own seeds). A game is about 90 / 80 / 65 recorded moves at 2 / 3 / 4 players,
+of which about 50 / 44 / 33 are decisions.
+
+#### The shard format
+
+A shard is one `.npz` file (`np.savez_compressed`) with five arrays of the same length
+`N`, one row per move of the teacher, in the order played:
+
+| Array | Shape | dtype | What it is |
+|---|---|---|---|
+| `obs` | (N, 614 / 808 / 1002) for 2 / 3 / 4 players | float32 | The observation before the move (`reset` / the previous `step`) |
+| `mask` | (N, 328 / 347 / 366) | bool | `env.action_masks()`: the legal moves |
+| `action` | (N,) | int64 | The move played, a number in **this table's** codec numbering (not the 4-player one) |
+| `reward` | (N,) | float32 | What `env.step(action)` returned, in game units (unscaled) |
+| `done` | (N,) | bool | `terminated or truncated`: True on the last move of each game |
+
+The rules the loader relies on:
+
+- **One table size per shard.** The size is read from the width of `obs`.
+- **Whole games, back to back.** A game's rows are contiguous and its last row has
+  `done = True`, so the last row of a shard is always `done = True`. A game cut off at
+  the turn limit (`truncated`) ends the same way.
+- **Forced moves may stay in** (rows whose `mask` has one `True`).
+- **Any file names**, as long as they end in `.npz`: shards are read in sorted name order,
+  and the last `val_fraction` of them (at least one) are the validation set. Interleave
+  table sizes in the names, as the script does, or validation sees only one size.
+
+Check a shard (here a 2-player shard of 10 games, from the quick test below):
+
+```python
+>>> z = np.load("training_output_seddler/data/shard_00000.npz")
+>>> {k: (z[k].shape, z[k].dtype) for k in z.files}
+{'obs': ((968, 614), dtype('float32')), 'mask': ((968, 328), dtype('bool')),
+ 'action': ((968,), dtype('int64')), 'reward': ((968,), dtype('float32')),
+ 'done': ((968,), dtype('bool'))}
+>>> z["done"].sum()  # games in the shard
+np.int64(10)
+```
+
+#### What `dataset.py` does with them
+
+For each shard, in `load_shards`:
+
+1. **Returns.** The discounted return after each move,
+   `G_t = reward_t * reward_scale + gamma * G_{t+1}`, restarting at every `done`. `gamma`
+   and `reward_scale` are PPO's (0.995 and 0.01), so the critic learns the values PPO
+   will compute. Forced moves are still in at this point, so their rewards count.
+2. **4-player layout.** Each observation is placed in the 1002-wide vector (an empty
+   seat's features stay 0), each mask in the 366-wide one, and each action renumbered
+   to its 4-player number, using `AnyTableSeddlerEnv`'s `feature_index` / `action_index`.
+3. **Decisions only.** Rows with a single legal action are dropped.
+4. **Samples** are `(obs float16, mask bool, action int64, return float32)`, all shards
+   concatenated into one `TensorDataset` in memory: about 2.4 KB per decision, so 10,000
+   games (about 440k decisions) are about 1 GB.
+
+`make_dataloaders` splits the shards into training and validation (whole shards, so no
+game is split) and batches them by indexing the tensors once per batch; the training
+loader is shuffled. It stops with an error when the folder has fewer than two shards.
+
+### 1. Pretrain
+
+Set `PretrainConfig` in `seddler_config.py`, then run from the repository root:
+
+```
+uv run python src/proximal-policy-optimization/seddler/pretrain.py
+```
+
+**What a run does, in order**
+
+1. **Generation.** With `init_weights` set, the generation is read from the
+   `train_config.json` next to those weights; the run trains the next one (see below).
+2. **Seed and device** (`seed`, `device = "auto"`: CUDA, then MPS, then CPU).
+3. **Data.** All shards of `data_dir` are loaded as above. It prints the counts:
+   `Data: 300 shards in ...: 1,234,567 training and 65,000 validation decisions`.
+4. **Network.** `ActorCritic` from `ModelConfig` (1002 in, 366 logits and 1 value out).
+   From scratch, its input standardization (mean and spread kept in the network) is
+   fitted on the training observations, 50,000 at a time. From `init_weights`, those
+   weights are loaded and their standardization is kept.
+5. **Optimizer.** AdamW (`learning_rate`, `weight_decay`), the learning rate falling to
+   0 on a cosine over all `epochs`.
+6. **Epoch 0** validates the starting weights and saves them as the best so far: the bar
+   every later epoch has to beat.
+7. **Each epoch** goes once over the training set. The loss of a batch is
+   - *actor*: cross-entropy between the logits, illegal actions masked to -1e9, and
+     the move played;
+   - *critic*: `0.5 * (value - return)^2`, weighted by `value_coef`.
+
+   Then it validates, appends the epoch to `history.json`, saves `trained_ppo.pth` when
+   the validation loss is the lowest so far, and rewrites `train_config.json`.
+8. **At the end** the best weights are loaded back, play `eval_episodes` greedy games
+   against `opponent` at `opponent_counts` tables (the same evaluation PPO runs), the
+   result goes into `train_config.json`, and the network is exported as the Seddler bot
+   `bc-gen<N>/`.
+
+Pretraining the critic matters: PPO started from a trained actor and an untrained critic
+gets noisy advantages, and its first updates undo the actor.
+
+**The log**, one line per epoch (accuracy: how often the legal action with the highest
+logit is the move played):
+
+```
+Generation: starting from gen0, training gen1
+Using device: mps
+Data: 300 shards in .../training_output_seddler/data: ... training and ... validation decisions
+Model: hidden (512, 512), 1,740,655 parameters
+Run folder: training_output_seddler/pretrain/run_gen1_<date>_<time>
+[Epoch   0/10]  starting weights  val: loss=... acc=... value_loss=...    0.0 min
+[Val] new best ..., saved trained_ppo.pth
+[Epoch   1/10]  train: loss=... acc=...  val: loss=... acc=... value_loss=...    ... min
+...
+Best validation loss: ... at epoch ...
+[Eval] mean reward over 300 episodes: ...
+[Eval] 2 players: won ... of ... (...; chance alone: 50%)
+✅ Seddler bot written to training_output_seddler/pretrain/run_gen1_<date>_<time>/bc-gen1
+```
+
+**What it writes**, in `training_output_seddler/pretrain/run_gen<N>_<date>_<time>/`
+(`<N>` is the generation it trains):
+
+| File | What it holds |
+|---|---|
+| `trained_ppo.pth` | The weights of the epoch with the lowest validation loss so far, as a `state_dict` |
+| `train_config.json` | `kind: "pretrain"`, the generation and bot name, the model spec, `PretrainConfig` and `ModelConfig`, the best epoch and validation loss, and (at the end) the evaluation. Rewritten after every epoch |
+| `history.json` | One entry per epoch (epoch 0 is the starting weights): training loss and accuracy, validation loss, policy loss, value loss and accuracy, minutes |
+| `bc-gen<N>/` | The pretrained network as a Seddler bot: `bot.json` and `bc-gen<N>-2p.onnx` / `-3p` / `-4p` |
+
+**What to set** (`PretrainConfig`)
+
+| Field | What it does | Default |
+|---|---|---|
+| `data_dir` | The shards folder | `training_output_seddler/data` |
+| `val_fraction` | Share of the shards kept for validation | 0.05 |
+| `epochs` | Passes over the training set | 10 |
+| `batch_size` | Decisions per gradient step | 1024 |
+| `learning_rate`, `weight_decay` | AdamW; the rate falls to 0 on a cosine | 1e-3, 1e-4 |
+| `value_coef` | Weight of the critic's loss | 0.5 |
+| `init_weights` | A run's `trained_ppo.pth` to continue from; `None` = scratch | `None` |
+| `gamma`, `reward_scale` | For the critic's returns. Leave them equal to PPO's | 0.995, 0.01 |
+| `eval_episodes`, `opponent`, `opponent_counts` | The evaluation at the end | 300, `"planner"`, (1, 2, 3) |
+| `seed`, `device` | | 42, `"auto"` |
+
+`ModelConfig.hidden_sizes` sets the network for both pretraining and PPO; keep it the same
+for both, or the weights will not load.
+
+**A quick test** before a long collection: set `NUM_SHARDS = 6`, `GAMES_PER_SHARD = 10` in
+the script (about 10 s), then `epochs = 2`, `eval_episodes = 4` and `val_fraction = 0.34`
+in `PretrainConfig` (with 6 shards, 0.05 would still keep 1). On so little data the
+validation loss may not beat epoch 0's; the run then keeps the starting weights, as it
+should.
+
+**Generations**, as in PPO: to continue from an earlier run (pretrain or PPO), set
+`init_weights` in `PretrainConfig` to its weights:
+
+```python
+init_weights: str | None = (
+    "training_output_seddler/pretrain/run_gen1_<date>_<time>/trained_ppo.pth"
+)
+```
+
+The generation is read from the `train_config.json` next to the weights and the run
+trains the next one (`bc-gen2/` here). Epoch 0 validates the starting weights, so the run
+only saves weights that beat them. Their input standardization is kept, not refitted on
+the new data. The optimizer and learning-rate schedule start fresh: lower `learning_rate`
+when only a little more training is wanted.
+
+### 2. PPO from the pretrained weights
+
+Set `init_weights` in `PPOTrainingConfig` to the pretrain run's weights
+(`training_output_seddler/pretrain/run_gen1_<date>_<time>/trained_ppo.pth`), then run
+`ppo_seddler.py` as below. The run trains the next generation (gen2
+from a gen1 pretrain) and only saves weights that beat the pretrained ones in evaluation.
+For fine-tuning, a lower `learning_rate` (1e-4) and `entropy_coef` (0.001) keep PPO from
+moving far from the pretrained policy in its first updates.
+
+## How to train PPO
+
+All PPO settings live in the `PPOTrainingConfig` dataclass in `seddler_config.py`. Edit
+it, then run from the repository root:
 
 ```
 uv run python src/proximal-policy-optimization/seddler/ppo_seddler.py
@@ -26,9 +318,9 @@ the generation it trains):
 | File | What it holds |
 |---|---|
 | `trained_ppo.pth` | The best weights, as a `state_dict` |
-| `train_config.json` | The config, the generation, the best evaluation, and under `"model"` everything needed to rebuild the network (`load_model(run_dir)` in `ppo_seddler.py` does it) |
+| `train_config.json` | The config, the generation, the best evaluation, and under `"model"` everything needed to rebuild the network (`load_model(run_dir)` in `model.py` does it) |
 | `rewards.json` | `"train"`: one entry per update (reward and win rate of the games that ended in it and of the last 500, losses, entropy, learning rate). `"eval"`: one entry per evaluation (reward, win rate, win rate per table size). Rewritten after every update, so it can be plotted while the run goes |
-| `ppo-gen<N>/` | The Seddler bot: `bot.json` and `ppo-2p.onnx` / `ppo-3p.onnx` / `ppo-4p.onnx`. Copy the folder into Seddler's `models/` |
+| `ppo-gen<N>/` | The Seddler bot: `bot.json` and `ppo-gen<N>-2p.onnx` / `-3p` / `-4p`. Copy the folder into Seddler's `models/` |
 | `ppo_seddler_training_results.png` | The training plot |
 
 Every `eval_every` updates (and at the start and end) the policy plays `eval_episodes`
@@ -40,7 +332,8 @@ from it (`None` trains from scratch). The first evaluation is then of those weig
 the new run only saves weights that beat them. `generation` in the config is the starting
 weights' generation (0 = scratch); the run trains `generation + 1` and names its bot
 `ppo-gen<generation + 1>`. When `init_weights` sits next to a `train_config.json`, the
-generation is read from there, so chained runs count up on their own.
+generation is read from there, so chained runs count up on their own. Pretraining and PPO
+share the count, so the bot names show the lineage: `bc-gen1` → `ppo-gen2` → `ppo-gen3`.
 
 **What to set**
 
@@ -50,7 +343,7 @@ generation is read from there, so chained runs count up on their own.
 | `num_envs` | Games played at once, one process each (about 175 MB of RAM each) | The machine's core count or a bit more: 32 on the M2 Pro or the 32-thread i9 |
 | `num_steps` | Decisions each game plays before an update | `4096 / num_envs`: 128 for 32 games, 512 for 8 |
 | `device` | Where the network runs | `"auto"`: CUDA, then MPS, then CPU |
-| `opponent` | Bots at the table | `"random"`, or `"heuristic"` once the policy beats random bots |
+| `opponent` | Bots at the table | `"random"`, or `"planner"` once the policy beats random bots |
 | `eval_episodes` | Greedy games played after training to report win rates | 300; 20 for a quick test |
 
 **The rule to keep:** `num_envs * num_steps` is one update's batch. Keep it near 4096.
@@ -82,8 +375,8 @@ Pro, picking moves is faster on the CPU (0.6 ms vs 0.9 ms on MPS) and an update 
 is faster on MPS (2 ms vs 10 ms); over a run they come out about even. CUDA, which
 copies to and from the GPU more cheaply, should gain a little more.
 
-The flags `--init <weights.pth>` (sets `init_weights`) and `--opponent heuristic` still
-work.
+There are no command-line flags: every setting, `init_weights` and `opponent` included,
+is set in `PPOTrainingConfig`.
 
 ## Result
 
@@ -94,7 +387,7 @@ work.
 | PPO, 3M run | 3M decisions (~50,000 games), ~30 min | 95% / 86% / 79% | 300 |
 
 PPO trained only against random bots does not beat the heuristic bots: a 1.5M-decision
-policy won 1 of 90 games against `HeuristicBot`.
+policy won 1 of 90 games against `HeuristicBot` (since replaced by `PlannerBot`).
 
 ## The environment, measured first
 
@@ -213,9 +506,8 @@ Greedy evaluation is higher than these sampled training rates.
 
 ## Not done
 
-- Training against the heuristic bots (`--opponent heuristic`, optionally with
-  `--init <weights.pth>` to start from the random-trained policy). `HeuristicBotV2` is
-  not wired into the scripts.
+- Training against the planner bots (`opponent = "planner"`, optionally with
+  `init_weights` set to start from the random-trained policy).
 - Self-play.
 - Checking the exported bots inside Seddler itself (they load in onnxruntime with the
   right shapes).

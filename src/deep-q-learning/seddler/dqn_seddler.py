@@ -304,7 +304,7 @@ class DQNTrainingConfig:
     max_steps_per_episode: int = 2000  # a game is cut off at its own turn limit first
     reward_scale: float = 0.01  # game units (+-200 a game, 20 a point) to the network's
     opponent_counts: tuple[int, ...] = (1, 2, 3)  # bots at the table, drawn per game
-    opponent: str = "random"  # "random" or "heuristic"
+    opponent: str = "random"  # "random" or "planner"
 
 
 def compute_td_targets(

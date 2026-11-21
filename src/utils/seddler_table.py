@@ -26,10 +26,10 @@ from numpy.typing import NDArray
 from seddler.codecs.catanatron import actions as catanatron_actions
 from seddler.codecs.catanatron import observation as catanatron_observation
 from seddler.env import BotMaker, SeddlerEnv
-from seddler.policies import HeuristicBot, RandomBot
+from seddler.policies import PlannerBot, RandomBot
 
 MAX_PLAYERS = 4
-OPPONENT_BOTS: dict[str, BotMaker] = {"random": RandomBot, "heuristic": HeuristicBot}
+OPPONENT_BOTS: dict[str, BotMaker] = {"random": RandomBot, "planner": PlannerBot}
 
 
 class AnyTableSeddlerEnv(gym.Env[NDArray[np.float32], np.int64]):

@@ -1,4 +1,5 @@
 .DS_Store
+training_output_seddler/pre-training-data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
